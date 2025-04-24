@@ -1,11 +1,7 @@
-from fastapi import FastAPI
-from routes import cases
+from app import create_app
 
-app = FastAPI(title="Cooler Master Backend API")
+app = create_app()
 
-# 路由註冊
-app.include_router(cases.router, prefix="/cases", tags=["Cooler Master Cases"])
-
-@app.get("/")
-def root():
-    return {"message": "Welcome to Cooler Master API Backend"}
+if __name__ == "__main__":
+    # debug=True 僅限本機測試
+    app.run(host="0.0.0.0", port=8000, debug=True)
