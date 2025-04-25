@@ -1,5 +1,6 @@
-import { FileText, Image } from "lucide-react";
+import { FileText } from "lucide-react";
 import { useState, useRef } from "react";
+import { useToast } from "@/hooks/use-toast";
 import { Textarea } from "../ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { RadioGroup, RadioGroupItem } from "../ui/radio-group";
@@ -7,11 +8,25 @@ import { Label } from "../ui/label";
 import { Button } from "../ui/button";
 import { cn } from "@/lib/utils";
 
+interface GeneratePayload {
+  description: string;
+  features: {
+    style: string;
+    color: string;
+    lighting: boolean;
+  };
+  base64_image?: string;
+}
+
 export function DesignInputs() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [description, setDescription] = useState("");
+  const [style, setStyle] = useState("");
+  const [color, setColor] = useState("");
+  const [lighting, setLighting] = useState("no");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const { toast } = useToast();
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -37,6 +52,79 @@ export function DesignInputs() {
   const appendKeyword = (keyword: string) => {
     const newText = description ? `${description} ${keyword}` : keyword;
     setDescription(newText);
+  };
+
+  const handleGenerate = async () => {
+    if (!description) {
+      toast({
+        title: "請輸入設計描述",
+        description: "請在設計描述欄位中輸入您的設計概念。",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!style || !color) {
+      toast({
+        title: "請選擇風格和顏色",
+        description: "請確保您已選擇設計風格和主要顏色。",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const payload: GeneratePayload = {
+      description,
+      features: {
+        style,
+        color,
+        lighting: lighting === "yes",
+      },
+    };
+
+    if (selectedFile) {
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        const base64String = reader.result as string;
+        payload.base64_image = base64String.split(',')[1];
+        await sendGenerateRequest(payload);
+      };
+      reader.readAsDataURL(selectedFile);
+    } else {
+      await sendGenerateRequest(payload);
+    }
+  };
+
+  const sendGenerateRequest = async (payload: GeneratePayload) => {
+    try {
+      const response = await fetch("/api/generate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        throw new Error("Generation failed");
+      }
+
+      const data = await response.json();
+      window.dispatchEvent(new CustomEvent("designGenerated", { 
+        detail: {
+          images: data.image_urls.map((url: string) => ({
+            url,
+            id: `${data.generation_id}-${Math.random()}`,
+          })),
+        },
+      }));
+    } catch (error) {
+      toast({
+        title: "生成失敗",
+        description: "請稍後再試。如果問題持續發生，請聯繫支援團隊。",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
@@ -77,7 +165,7 @@ export function DesignInputs() {
       {/* Style Dropdown */}
       <div className="space-y-2">
         <Label className="text-sm">🎨 風格 (Style)</Label>
-        <Select>
+        <Select value={style} onValueChange={setStyle}>
           <SelectTrigger>
             <SelectValue placeholder="選擇風格..." />
           </SelectTrigger>
@@ -95,7 +183,7 @@ export function DesignInputs() {
       {/* Color Dropdown */}
       <div className="space-y-2">
         <Label className="text-sm">🌈 主要顏色 (Color)</Label>
-        <Select>
+        <Select value={color} onValueChange={setColor}>
           <SelectTrigger>
             <SelectValue placeholder="選擇顏色..." />
           </SelectTrigger>
@@ -112,7 +200,7 @@ export function DesignInputs() {
       {/* Lighting Radio Buttons */}
       <div className="space-y-2">
         <Label className="text-sm">💡 是否有燈效 (Lighting)</Label>
-        <RadioGroup defaultValue="no" className="flex gap-4">
+        <RadioGroup value={lighting} onValueChange={setLighting} className="flex gap-4">
           <div className="flex items-center space-x-2">
             <RadioGroupItem value="yes" id="yes" />
             <Label htmlFor="yes">Yes</Label>
@@ -154,6 +242,7 @@ export function DesignInputs() {
       <Button 
         className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
         size="lg"
+        onClick={handleGenerate}
       >
         ✨ 生成設計概念圖
       </Button>
