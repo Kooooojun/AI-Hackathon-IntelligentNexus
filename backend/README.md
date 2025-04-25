@@ -63,6 +63,7 @@
 python main.py
 ```
 
+```
 backend/
  ├── main.py                # Flask 入口
  ├── requirements.txt       # 套件依賴
@@ -87,3 +88,4 @@ backend/
  │
  │   └── utils/
  │       └── logger.py      # 共用 logger 工具
+```
