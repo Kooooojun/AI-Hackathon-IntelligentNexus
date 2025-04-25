@@ -39,7 +39,7 @@ except ImportError:
     def mock_background_task(request_id, prompt, input_image_keys=None):
         global job_status_store # 直接修改全域字典 (僅供範例)
         logger.info(f"[Thread-{request_id[:6]}] STUB Background task started with prompt: {prompt[:30]}...")
-        time.sleep(10) # 模擬耗時的 AI 生成
+        time.sleep(1) # 模擬耗時的 AI 生成
         # 模擬成功並設定假 URL
         job_status_store[request_id] = {
             "status": "succeeded",
