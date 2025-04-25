@@ -27,3 +27,20 @@ def check_bucket_exists():
         print(f"✅ Bucket '{bucket}' 存在")
     except Exception as e:
         print(f"❌ Bucket '{bucket}' 不存在或權限錯誤：{e}")
+        
+
+def download_file_from_s3(key, download_path):
+    """
+    從 S3 下載檔案
+
+    :param key: S3 上的檔案 key（路徑）
+    :param download_path: 下載到本地的儲存路徑
+    """
+    bucket = os.getenv('S3_BUCKET_NAME')
+    print(f"📥 從 s3://{bucket}/{key} 下載檔案到 {download_path}")
+    
+    try:
+        s3.download_file(bucket, key, download_path)
+        print("✅ 下載完成")
+    except Exception as e:
+        print(f"❌ 下載失敗：{e}") 
