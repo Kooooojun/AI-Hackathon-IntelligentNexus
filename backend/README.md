@@ -62,3 +62,28 @@
 ```bash
 python main.py
 ```
+
+backend/
+ ├── main.py                # Flask 入口
+ ├── requirements.txt       # 套件依賴
+ ├── .env.example           # AWS 設定範例
+ │
+ ├── app/
+ │   ├── __init__.py        # create_app(), 註冊 Blueprint
+ │   ├── config.py          # 設定讀取（.env）
+ │
+ │   ├── routes/
+ │   │   ├── generate.py    # /api/generate endpoint
+ │   │   └── feedback.py    # /api/feedback endpoint
+ │
+ │   ├── services/
+ │   │   ├── prompt_engine.py     # Prompt 組合邏輯
+ │   │   ├── sagemaker_client.py  # 模型呼叫（SageMaker or Bedrock）
+ │   │   └── bedrock_client.py    # Bedrock（Titan Image stub）
+ │
+ │   ├── db/
+ │   │   ├── dynamo.py      # 儲存回饋（stub）
+ │   │   └── s3.py          # 上傳圖片（stub）
+ │
+ │   └── utils/
+ │       └── logger.py      # 共用 logger 工具
