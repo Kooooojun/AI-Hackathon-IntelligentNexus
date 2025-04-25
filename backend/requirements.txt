@@ -1,4 +1,5 @@
 Flask==3.0.3
+flask-restx==1.3.0
 Flasgger==0.9.7.1
 boto3==1.34.108
 python-dotenv==1.0.1
