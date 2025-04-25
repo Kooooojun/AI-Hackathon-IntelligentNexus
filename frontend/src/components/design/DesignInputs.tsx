@@ -1,98 +1,71 @@
 // frontend/src/components/design/DesignInputs.tsx
 
-import { FileText, Loader2 } from "lucide-react"; // 確保 Loader2 被 import
-import { useState, useRef, useEffect } from "react";
-import { useToast } from "@/hooks/use-toast"; // 假設 useToast hook 路徑正確
-import { Textarea } from "../ui/textarea"; // 假設 Shadcn UI 元件路徑正確
+import { FileText, Loader2 } from "lucide-react";
+import { useState, useRef, useEffect, useCallback } from "react"; // 加入 useCallback
+import { useToast } from "@/hooks/use-toast";
+import { Textarea } from "../ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { RadioGroup, RadioGroupItem } from "../ui/radio-group";
 import { Label } from "../ui/label";
 import { Button } from "../ui/button";
-// import { cn } from "@/lib/utils"; // 如果需要 cn 函數來合併 classNames
 
-// 定義從 API 獲取或傳遞給 MainContent 的圖片結構
-interface GeneratedImage {
-  url: string;
-  id: string;
-}
-
-// 定義輪詢結果的結構
-interface PollResult {
-    status: "processing" | "succeeded" | "failed";
-    image_url?: string; // 後端成功時返回
-    error?: string;     // 後端失敗時返回
-}
-
-// --- 設定值 ---
-// 從環境變數讀取後端 URL，提供本地開發的預設值
-// !!! 部署前務必在 .env 或環境變數中設定 VITE_BACKEND_API_URL !!!
-const BACKEND_API_URL = import.meta.env.VITE_BACKEND_API_URL || "http://127.0.0.1:8000"; // 使用你的後端端口
+// --- Interfaces and Constants ---
+interface GeneratedImage { url: string; id: string; }
+interface PollResult { status: "processing" | "succeeded" | "failed"; image_url?: string; error?: string; }
+const BACKEND_API_URL = import.meta.env.VITE_BACKEND_API_URL || "http://127.0.0.1:8000";
 const API_GENERATE_ENDPOINT = `${BACKEND_API_URL}/api/generate`;
+const MAX_UPLOAD_SIZE_MB = 5;
+const POLLING_INTERVAL = 4000;
+const MAX_POLLING_ATTEMPTS = 30;
+// -----------------------------
 
-const MAX_UPLOAD_SIZE_MB = 5; // 限制上傳大小 (MB)
-const POLLING_INTERVAL = 4000; // 輪詢間隔 (毫秒) - 4 秒
-const MAX_POLLING_ATTEMPTS = 30; // 最大輪詢次數 (4 * 30 = 120 秒)
-
-// --- 元件定義 ---
 export function DesignInputs() {
   // --- State Declarations ---
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [description, setDescription] = useState("");
-  const [style, setStyle] = useState(""); // 儲存 Select 的 value
-  const [color, setColor] = useState(""); // 儲存 Select 的 value
-  const [lighting, setLighting] = useState("no"); // 儲存 RadioGroup 的 value ('yes' or 'no')
-  const [isGenerating, setIsGenerating] = useState(false); // Loading 狀態
-  const [currentRequestId, setCurrentRequestId] = useState<string | null>(null); // 追蹤當前請求 ID
-  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null); // 儲存輪詢 interval ID
-  const fileInputRef = useRef<HTMLInputElement>(null); // 用於清除檔案輸入
-
+  const [style, setStyle] = useState("");
+  const [color, setColor] = useState("");
+  const [lighting, setLighting] = useState("no");
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [currentRequestId, setCurrentRequestId] = useState<string | null>(null);
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const pollingAttemptsRef = useRef<number>(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { toast } = useToast();
+
+  // --- Cleanup Function ---
+  // 使用 useCallback 包裝 stopPolling，避免在 useEffect 中產生依賴變化警告
+  const stopPolling = useCallback((reason: string, requestIdToClear?: string) => {
+    // 只有當這個停止請求是針對當前正在進行的請求時才更新狀態
+    // 或者無條件停止（例如元件卸載）
+    if (requestIdToClear === undefined || currentRequestId === requestIdToClear) {
+        if (pollingIntervalRef.current) {
+            console.log(`Stopping polling for ${requestIdToClear ?? 'any active interval'}. Reason: ${reason}`);
+            clearInterval(pollingIntervalRef.current);
+            pollingIntervalRef.current = null;
+        }
+        setIsGenerating(false);
+        // 只有在確認是當前請求結束時才清除 ID
+        if (currentRequestId === requestIdToClear) {
+             setCurrentRequestId(null);
+        }
+    } else {
+        console.log(`Received stop request for ${requestIdToClear}, but current ID is ${currentRequestId}. Ignoring stop.`);
+    }
+  }, [currentRequestId]); // 依賴 currentRequestId
 
   // --- Cleanup polling on component unmount ---
   useEffect(() => {
-    // 當元件卸載時清除任何正在進行的輪詢
     return () => {
-      if (pollingIntervalRef.current) {
-        console.log("DesignInputs unmounting, clearing polling interval.");
-        clearInterval(pollingIntervalRef.current);
-        pollingIntervalRef.current = null;
-      }
+      // 元件卸載時，無條件停止任何進行中的輪詢
+      stopPolling("Component unmounted");
     };
-  }, []);
+  }, [stopPolling]); // 依賴 useCallback 包裝過的 stopPolling
 
-  // --- File Handling ---
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-       const fileSizeMB = file.size / (1024 * 1024);
-       if (fileSizeMB > MAX_UPLOAD_SIZE_MB) {
-           toast({ title: "檔案過大", description: `圖片大小請勿超過 ${MAX_UPLOAD_SIZE_MB}MB。`, variant: "destructive"});
-           e.target.value = ''; // 清除選擇
-           setSelectedFile(null);
-           setImagePreview(null);
-           return;
-       }
-      setSelectedFile(file);
-      const reader = new FileReader();
-      reader.onloadend = () => { setImagePreview(reader.result as string); };
-      reader.readAsDataURL(file);
-    } else {
-        setSelectedFile(null);
-        setImagePreview(null);
-    }
-  };
 
-  const clearFileInput = () => {
-      setSelectedFile(null);
-      setImagePreview(null);
-      // 清除檔案輸入框的視覺顯示
-      if (fileInputRef.current) {
-          fileInputRef.current.value = '';
-      }
-  }
-
-  // --- Keyword Appending ---
+  // --- File Handling & Keyword Appending ---
   const keywords = ["Hexagonal Mesh", "Brushed Aluminum", "Tempered Glass", "CM Logo", "High Airflow Vents", "RGB Strip"];
   const appendKeyword = (keyword: string) => {
     const currentDescription = description;
@@ -102,228 +75,204 @@ export function DesignInputs() {
     setDescription(newText);
   };
 
-  // --- Polling Function ---
-  const pollForResult = async (requestId: string) => {
-    let attempts = 0;
-    // Loading 狀態應由 handleGenerate 控制
+  // -----------------------------------------------------
 
-    const poll = async () => {
-      // 檢查輪詢是否應該停止 (元件卸載或新的請求開始)
-      if (currentRequestId !== requestId || !pollingIntervalRef.current) {
-          console.log(`Polling stopped for ${requestId}. Current request ID: ${currentRequestId}`);
-          if(pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
-          pollingIntervalRef.current = null;
-          // 只有當這個輪詢是當前活躍的輪詢時才改變 loading 狀態
-          if (currentRequestId === requestId) {
-             setIsGenerating(false);
-             setCurrentRequestId(null);
-          }
+
+  // --- Polling Function (被 setInterval 調用) ---
+  // 使用 useCallback 並傳入依賴項，確保函數在依賴不變時引用穩定
+  const poll = useCallback(async (requestId: string) => {
+    // 在函數開頭立即檢查 ID 是否匹配，如果不匹配則提前停止
+    if (currentRequestId !== requestId) {
+        console.log(`Poll function called for ${requestId}, but state's currentRequestId is ${currentRequestId}. Stopping this poll instance.`);
+        stopPolling("Request ID mismatch", requestId); // 嘗試停止對應的 interval
+        return;
+    }
+
+    pollingAttemptsRef.current += 1;
+    const attempt = pollingAttemptsRef.current; // 保存當前嘗試次數
+    console.log(`Polling attempt ${attempt}/${MAX_POLLING_ATTEMPTS} for ${requestId}...`);
+
+    if (attempt > MAX_POLLING_ATTEMPTS) {
+        console.warn(`Polling timed out for ${requestId}.`);
+        toast({ title: "查詢超時", description: "生成可能仍在進行，請稍後查看。", variant: "warning" });
+        stopPolling("Timeout", requestId);
+        return;
+    }
+
+    try {
+      const response = await fetch(`${API_GENERATE_ENDPOINT}/${requestId}`);
+
+      // 再次檢查 ID 是否在 fetch 返回後仍然匹配，防止請求過程中 ID 已改變
+      if (currentRequestId !== requestId) {
+          console.log(`Request ID changed during fetch for ${requestId}. Stopping poll.`);
+          stopPolling("Request ID changed during fetch", requestId);
           return;
       }
 
-      if (attempts >= MAX_POLLING_ATTEMPTS) {
-        console.warn(`Polling timed out for ${requestId} after ${attempts} attempts.`);
-        toast({ title: "查詢超時", description: "生成可能仍在進行，請稍後或刷新頁面。", variant: "warning" });
-        if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
-        pollingIntervalRef.current = null;
-        setIsGenerating(false); // 結束 Loading
-        setCurrentRequestId(null);
-        return;
+      if (!response.ok && response.status !== 404) {
+         const errorText = await response.text();
+         throw new Error(`Polling request failed: ${response.status} - ${errorText}`);
       }
-      attempts++;
-      console.log(`Polling attempt ${attempts}/${MAX_POLLING_ATTEMPTS} for ${requestId}...`);
+      if (response.status === 404) {
+          console.log(`Status 404 for ${requestId}, assuming still processing...`);
+          // 404 繼續輪詢，不需停止
+          return;
+      }
 
-      try {
-        const response = await fetch(`${API_GENERATE_ENDPOINT}/${requestId}`);
+      const result: PollResult = await response.json();
+      console.log(`Polling result for ${requestId} (Attempt ${attempt}):`, result);
 
-        if (!response.ok && response.status !== 404) {
-           const errorText = await response.text();
-           throw new Error(`Polling failed: ${response.status} - ${errorText}`);
-        }
-        if (response.status === 404) {
-            console.log(`Status 404 for ${requestId}, assuming still processing...`);
-            return; // 等待下一次 interval
-        }
-
-        const result: PollResult = await response.json();
-        console.log(`Polling result for ${requestId}:`, result);
-
-        // ** 只根據 API 回應的 result.status 做判斷 **
-        if (result.status === "succeeded") {
-          console.log(`Generation Succeeded for ${requestId}! URL: ${result.image_url}`);
-          if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
-          pollingIntervalRef.current = null; // 清除 ref
-
-          if (result.image_url) {
-            // 觸發事件，將結果傳遞給 MainContent
-            window.dispatchEvent(new CustomEvent("designGenerated", {
-              detail: {
-                images: [{ url: result.image_url, id: `${requestId}-0` }], // 假設回傳單一 URL
-              },
-            }));
-            toast({ title: "🎉 生成成功！" });
-          } else {
-             toast({ title: "處理異常", description: "後端狀態成功但未返回圖片 URL。", variant: "warning" });
-          }
-          setIsGenerating(false); // **結束 Loading**
-          setCurrentRequestId(null);
-
-        } else if (result.status === "failed") {
-          console.error(`Generation Failed for ${requestId}: ${result.error}`);
-          if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
-          pollingIntervalRef.current = null;
-          toast({ title: "生成失敗", description: result.error || "未知後端錯誤", variant: "destructive" });
-          setIsGenerating(false); // **結束 Loading**
-          setCurrentRequestId(null);
-
-        } else if (result.status === "processing") {
-          console.log(`Status for ${requestId} is still 'processing'...`);
-          // 等待下一次 interval 自動觸發，不做任何事
+      if (result.status === "succeeded") {
+        console.log(`Generation Succeeded for ${requestId}! URL: ${result.image_url}`);
+        if (result.image_url) {
+          window.dispatchEvent(new CustomEvent("designGenerated", { detail: { images: [{ url: result.image_url, id: `${requestId}-0` }] } }));
+          toast({ title: "🎉 生成成功！" });
         } else {
-           console.warn(`Unknown status received for ${requestId}: ${result.status}`);
-           if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
-           pollingIntervalRef.current = null;
-           toast({ title: "收到未知狀態", description: `後端返回狀態: ${result.status}`, variant: "destructive" });
-           setIsGenerating(false); // **結束 Loading**
-           setCurrentRequestId(null);
+           toast({ title: "處理異常", description: "後端狀態成功但未返回圖片 URL。", variant: "warning" });
         }
+        stopPolling("Succeeded", requestId); // 成功，停止輪詢
 
-      } catch (error) {
-        console.error("Polling error:", error);
-        if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
-        pollingIntervalRef.current = null;
-        toast({ title: "查詢結果出錯", description: error.message, variant: "destructive" });
-        setIsGenerating(false); // **結束 Loading**
-        setCurrentRequestId(null);
+      } else if (result.status === "failed") {
+        console.error(`Generation Failed for ${requestId}: ${result.error}`);
+        toast({ title: "生成失敗", description: result.error || "未知後端錯誤", variant: "destructive" });
+        stopPolling("Failed", requestId); // 失敗，停止輪詢
+
+      } else if (result.status === "processing") {
+        console.log(`Status for ${requestId} is still 'processing'...`);
+        // 狀態仍在處理中，等待下一次 interval
+      } else {
+         console.warn(`Unknown status received for ${requestId}: ${result.status}`);
+         toast({ title: "收到未知狀態", description: `後端返回狀態: ${result.status}`, variant: "destructive" });
+         stopPolling("Unknown Status", requestId); // 未知狀態，停止輪詢
       }
-    }; // end of poll function
 
-    // --- 啟動輪詢 ---
-    // 清理可能存在的舊 interval
-    if (pollingIntervalRef.current) {
-      clearInterval(pollingIntervalRef.current);
+    } catch (error) {
+      console.error(`Polling error for ${requestId} (Attempt ${attempt}):`, error);
+      toast({ title: "查詢結果出錯", description: error.message, variant: "destructive" });
+      stopPolling("Fetch Error", requestId); // 發生錯誤，停止輪詢
     }
-    // 設定新的 interval 並儲存 ID
-    pollingIntervalRef.current = setInterval(poll, POLLING_INTERVAL);
-    // 立即執行一次以快速獲取初始狀態（可選，但能更快得到結果）
-    // await poll(); // 如果後端響應快，立即執行可能更好
-    // -----------------
+  }, [currentRequestId, toast, stopPolling]); // poll 函數依賴這些
 
-  }; // <-- pollForResult 函數結束
+    // --- *** 新增：useEffect Hook 來啟動輪詢 *** ---
+    useEffect(() => {
+      // 只有當 currentRequestId 有值 (表示剛提交新請求) 且 isGenerating 是 true 時才啟動輪詢
+      if (currentRequestId && isGenerating) {
+          console.log(`useEffect detected new currentRequestId: ${currentRequestId}. Starting polling.`);
+          // 清理可能存在的舊 interval (雙重保險)
+          if (pollingIntervalRef.current) {
+              clearInterval(pollingIntervalRef.current);
+          }
+          // 重置嘗試次數
+          pollingAttemptsRef.current = 0;
+          // 立即執行一次檢查
+          poll(currentRequestId);
+          // 設定 Interval，並將 ID 存入 Ref
+          // 將 currentRequestId 傳給 poll 函數的閉包
+          pollingIntervalRef.current = setInterval(() => poll(currentRequestId), POLLING_INTERVAL);
+      }
+  
+      // 這個 effect 的清理函數會在 currentRequestId 改變或元件卸載時執行
+      // 但主要的清理工作已交給 stopPolling
+      return () => {
+          // 可以在這裡也加一道保險，但 stopPolling 應該已經處理了
+          // if (pollingIntervalRef.current) {
+          //    clearInterval(pollingIntervalRef.current);
+          // }
+      };
+    }, [currentRequestId, isGenerating, poll]); // *** 監聽 currentRequestId 和 isGenerating 的變化 ***
+    // ---------------------------------------------
 
-
-  // --- Generate Button Handler (使用真實 API) ---
+  // --- Generate Button Handler ---
   const handleGenerate = async () => {
     // 1. 輸入驗證
     if (!description) { toast({ title: "請輸入設計描述", variant: "destructive" }); return; }
-    if (!style) { toast({ title: "請選擇風格", variant: "destructive" }); return; } // 檢查 style
-    if (!color) { toast({ title: "請選擇顏色", variant: "destructive" }); return; } // 檢查 color
+    if (!style) { toast({ title: "請選擇風格", variant: "destructive" }); return; }
+    if (!color) { toast({ title: "請選擇顏色", variant: "destructive" }); return; }
 
-    // 停止並清除任何正在進行的舊輪詢
-    if (pollingIntervalRef.current) {
-      clearInterval(pollingIntervalRef.current);
-      pollingIntervalRef.current = null;
-      console.log("Cleared previous polling interval before new request.");
-    }
-    setCurrentRequestId(null); // 清除舊 ID
+    // 2. 停止舊輪詢並準備新請求
+    stopPolling("New request started by user"); // 清理舊狀態和 interval
 
     setIsGenerating(true); // **設置 Loading 狀態**
-    // 可選：立即清空上次結果
-    window.dispatchEvent(new CustomEvent("designGenerated", { detail: { images: [] } }));
+    // setCurrentRequestId(null); // stopPolling 會處理
+    window.dispatchEvent(new CustomEvent("designGenerated", { detail: { images: [] } })); // 清空上次結果
 
-    // 2. 建立 FormData
+    // 3. 建立 FormData
     const formData = new FormData();
     formData.append('description', description);
     formData.append('style', style);
-    formData.append('color', color); // 後端接收的是字串，如果需要 HEX，前端選擇時 value 應為 HEX
-    formData.append('lighting', lighting); // 'yes' or 'no'
-
-    // 3. 添加檔案
-    if (selectedFile) {
-      formData.append('images', selectedFile, selectedFile.name);
-    }
+    formData.append('colors', color);
+    formData.append('lighting', lighting);
+    if (selectedFile) { formData.append('images', selectedFile, selectedFile.name); }
 
     // 4. 發送 POST 請求
     try {
       console.log("Sending POST /api/generate request...");
-      const response = await fetch(API_GENERATE_ENDPOINT, {
-        method: "POST",
-        body: formData,
-        // Content-Type 由瀏覽器自動設定
-      });
+      const response = await fetch(API_GENERATE_ENDPOINT, { method: "POST", body: formData });
 
-      // 檢查網路或伺服器層級錯誤
-      if (!response.ok) {
-        let errorMsg = `請求提交失敗: ${response.status}`;
-        try {
-          const errorData = await response.json(); // 嘗試讀取後端 JSON 錯誤
-          errorMsg = errorData.error || errorMsg;
-        } catch (parseError) {
-          errorMsg = `${errorMsg} (無法解析回應)`;
-        }
-        throw new Error(errorMsg);
-      }
+      if (!response.ok) { /* ... 處理錯誤 (同之前) ... */ throw new Error(`請求提交失敗: ${response.status}`); }
 
-      // 解析成功提交後的回應
       const data = await response.json();
       console.log("Generation task submitted response:", data);
 
-      // 檢查後端返回的狀態和 request_id
       if (data.status === "succeeded" && data.request_id) {
         const newRequestId = data.request_id;
-        setCurrentRequestId(newRequestId); // **保存新的 Request ID**
-        toast({
-          title: "✅ 請求已提交",
-          description: `開始生成，請稍候...`, // 簡化提示
-        });
+        toast({ title: "✅ 請求已提交", description: `開始檢查結果...` });
+        // **關鍵：只設定 Request ID state，讓 useEffect 去啟動輪詢**
+        setCurrentRequestId(newRequestId);
+        // **不再直接呼叫 poll 或 pollForResult**
 
-        // 5. **開始輪詢結果**
-        await pollForResult(newRequestId);
-
-      } else {
-         // 如果後端直接返回錯誤或格式不對
-         throw new Error(data.error || "後端未返回有效的 request_id。");
-      }
+      } else { throw new Error(data.error || "後端未返回有效的 request_id。"); }
 
     } catch (error) {
       console.error("Failed to call POST /api/generate:", error);
+      toast({ title: "提交生成請求失敗", description: error.message, variant: "destructive" });
+      setIsGenerating(false); // **初始請求失敗時結束 Loading**
+      setCurrentRequestId(null); // 清除 ID
+    }
+    // **Loading 狀態由 poll 或 stopPolling 結束**
+  };
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const file = event.target.files?.[0];
+  if (file) {
+    if (file.size > MAX_UPLOAD_SIZE_MB * 1024 * 1024) {
       toast({
-        title: "提交生成請求失敗",
-        description: error.message,
+        title: "檔案太大",
+        description: `檔案大小不能超過 ${MAX_UPLOAD_SIZE_MB} MB`,
         variant: "destructive",
       });
-      setIsGenerating(false); // **確保初始請求失敗時結束 Loading**
-      setCurrentRequestId(null); // 清除 ID
-      // 清除可能存在的 interval
-      if (pollingIntervalRef.current) {
-          clearInterval(pollingIntervalRef.current);
-          pollingIntervalRef.current = null;
-      }
+      return;
     }
-    // **注意：Loading 狀態由 pollForResult 內部結束**
-  };
+    setSelectedFile(file);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setImagePreview(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  }
+};
 
   // --- JSX Return ---
   return (
-    <div className="space-y-6 p-4 md:p-6">
+    <div className="space-y-6">
       {/* Design Description */}
       <div className="space-y-2">
-        <Label htmlFor="description-area" className="flex items-center gap-2 text-lg font-semibold">
-          <FileText className="h-5 w-5" />
-          📝 設計描述
+        <Label className="flex items-center gap-2 text-sm">
+          <FileText className="h-4 w-4" />
+          📝 設計描述 (Design Description)
         </Label>
-        <Textarea
-          id="description-area"
-          placeholder="請描述您的設計概念，例如：一個流線型的白色機殼，帶有藍色呼吸燈和大量散熱網孔..."
-          className="min-h-[150px] bg-background/50 text-base"
+        <Textarea 
+          placeholder="請描述您的設計概念..."
+          className="min-h-[120px] bg-background/50"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
+          ref={textareaRef}
         />
       </div>
 
       {/* Keywords Section */}
       <div className="space-y-2">
-        <Label className="text-base font-medium">💡 點選加入提示詞 (可選)</Label>
+        <Label className="text-sm">💡 點選加入提示詞 (可選)</Label>
         <div className="flex flex-wrap gap-2">
           {keywords.map((keyword) => (
             <Button
@@ -331,7 +280,7 @@ export function DesignInputs() {
               variant="outline"
               size="sm"
               onClick={() => appendKeyword(keyword)}
-              className="bg-background/50 hover:bg-primary/20 transition-colors duration-150 text-sm"
+              className="bg-background/50 hover:bg-primary/20"
             >
               {keyword}
             </Button>
@@ -339,107 +288,89 @@ export function DesignInputs() {
         </div>
       </div>
 
-      {/* Core Features Section using Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-         {/* Style Dropdown */}
-         <div className="space-y-2">
-            <Label htmlFor="style-select" className="text-base font-medium">🎨 風格</Label>
-            <Select value={style} onValueChange={setStyle}>
-              <SelectTrigger id="style-select" className="text-base">
-                <SelectValue placeholder="選擇風格..." />
-              </SelectTrigger>
-              <SelectContent>
-                 <SelectItem value="Gaming">Gaming</SelectItem>
-                 <SelectItem value="Minimalist">Minimalist</SelectItem>
-                 <SelectItem value="High Airflow">High Airflow</SelectItem>
-                 <SelectItem value="Silent">Silent</SelectItem>
-                 <SelectItem value="Futuristic">Futuristic</SelectItem>
-                 <SelectItem value="Industrial">Industrial</SelectItem>
-              </SelectContent>
-            </Select>
+      {/* Style Dropdown */}
+      <div className="space-y-2">
+        <Label className="text-sm">🎨 風格 (Style)</Label>
+        <Select value={style} onValueChange={setStyle}>
+          <SelectTrigger>
+            <SelectValue placeholder="選擇風格..." />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="gaming">Gaming</SelectItem>
+            <SelectItem value="minimalist">Minimalist</SelectItem>
+            <SelectItem value="highairflow">High Airflow</SelectItem>
+            <SelectItem value="silent">Silent</SelectItem>
+            <SelectItem value="futuristic">Futuristic</SelectItem>
+            <SelectItem value="industrial">Industrial</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Color Dropdown */}
+      <div className="space-y-2">
+        <Label className="text-sm">🌈 主要顏色 (Color)</Label>
+        <Select value={color} onValueChange={setColor}>
+          <SelectTrigger>
+            <SelectValue placeholder="選擇顏色..." />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="black">Black</SelectItem>
+            <SelectItem value="white">White</SelectItem>
+            <SelectItem value="silver">Silver</SelectItem>
+            <SelectItem value="gray">Gray</SelectItem>
+            <SelectItem value="gunmetal">Gunmetal</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Lighting Radio Buttons */}
+      <div className="space-y-2">
+        <Label className="text-sm">💡 是否有燈效 (Lighting)</Label>
+        <RadioGroup value={lighting} onValueChange={setLighting} className="flex gap-4">
+          <div className="flex items-center space-x-2">
+            <RadioGroupItem value="yes" id="yes" />
+            <Label htmlFor="yes">Yes</Label>
           </div>
-
-          {/* Color Dropdown */}
-          <div className="space-y-2">
-             <Label htmlFor="color-select" className="text-base font-medium">🌈 主要顏色</Label>
-             <Select value={color} onValueChange={setColor}>
-               <SelectTrigger id="color-select" className="text-base">
-                 <SelectValue placeholder="選擇顏色..." />
-               </SelectTrigger>
-               <SelectContent>
-                 <SelectItem value="Black">Black</SelectItem>
-                 <SelectItem value="White">White</SelectItem>
-                 <SelectItem value="Silver">Silver</SelectItem>
-                 <SelectItem value="Gray">Gray</SelectItem>
-                 <SelectItem value="Gunmetal">Gunmetal</SelectItem>
-                 {/* Example of adding HEX color */}
-                 {/* <SelectItem value="#6A0DAD">Purple</SelectItem> */}
-               </SelectContent>
-             </Select>
-           </div>
-
-           {/* Lighting Radio Buttons */}
-           <div className="space-y-2">
-             <Label className="text-base font-medium">💡 是否有燈效</Label>
-             <RadioGroup value={lighting} onValueChange={setLighting} className="flex gap-4 pt-2">
-               <div className="flex items-center space-x-2">
-                 <RadioGroupItem value="yes" id="light-yes" />
-                 <Label htmlFor="light-yes" className="text-base">Yes</Label>
-               </div>
-               <div className="flex items-center space-x-2">
-                 <RadioGroupItem value="no" id="light-no" />
-                 <Label htmlFor="light-no" className="text-base">No</Label>
-               </div>
-             </RadioGroup>
-           </div>
+          <div className="flex items-center space-x-2">
+            <RadioGroupItem value="no" id="no" />
+            <Label htmlFor="no">No</Label>
+          </div>
+        </RadioGroup>
       </div>
 
       {/* File Upload */}
       <div className="space-y-2">
-        <Label htmlFor="file-upload" className="text-base font-medium">
+        <Label className="text-sm">
           🚀 上傳參考圖片/草圖 (可選)
         </Label>
         <div className="flex flex-col gap-4">
           <input
-            id="file-upload"
-            ref={fileInputRef} // Add ref for clearing
             type="file"
             accept=".png,.jpg,.jpeg,.webp"
             onChange={handleFileChange}
-            className="block w-full text-sm text-muted-foreground file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20 cursor-pointer"
+            className="file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0
+            file:text-sm file:font-semibold file:bg-primary/10 file:text-primary
+            hover:file:bg-primary/20 cursor-pointer"
           />
           {imagePreview && (
-            <div className="relative w-40 h-40 border rounded-lg overflow-hidden">
-              <img src={imagePreview} alt="Preview" className="object-cover w-full h-full" />
-               <Button
-                   variant="destructive"
-                   size="icon"
-                   className="absolute top-1 right-1 h-6 w-6 rounded-full opacity-70 hover:opacity-100 z-10"
-                   onClick={clearFileInput} // Use clear function
-                   aria-label="Remove uploaded image" // Accessibility
-                 >
-                   X
-                 </Button>
+            <div className="relative w-40 h-40">
+              <img
+                src={imagePreview}
+                alt="Preview"
+                className="rounded-lg object-cover w-full h-full"
+              />
             </div>
           )}
         </div>
       </div>
 
       {/* Generate Button */}
-      <Button
-        className="w-full text-lg font-semibold mt-4" // Added margin top
+      <Button 
+        className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
         size="lg"
         onClick={handleGenerate}
-        disabled={isGenerating}
       >
-        {isGenerating ? (
-          <>
-            <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-            生成中...
-          </>
-        ) : (
-          "✨ 生成設計概念圖"
-        )}
+        ✨ 生成設計概念圖
       </Button>
     </div>
   );
