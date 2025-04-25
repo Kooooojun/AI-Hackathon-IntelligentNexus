@@ -1,3 +1,4 @@
+
 import { ThumbsDown, ThumbsUp } from "lucide-react";
 import { Button } from "../ui/button";
 import {
@@ -5,6 +6,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "../ui/tooltip";
+import { useState } from "react";
 
 interface GeneratedImage {
   url: string;
@@ -17,7 +19,13 @@ interface DesignResultsProps {
   onFeedback: (imageId: string, isPositive: boolean) => void;
 }
 
+interface FeedbackState {
+  [key: string]: boolean;
+}
+
 export function DesignResults({ isLoading, images, onFeedback }: DesignResultsProps) {
+  const [feedbackGiven, setFeedbackGiven] = useState<FeedbackState>({});
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-[400px]">
@@ -25,6 +33,14 @@ export function DesignResults({ isLoading, images, onFeedback }: DesignResultsPr
       </div>
     );
   }
+
+  const handleFeedback = (imageId: string, isPositive: boolean) => {
+    setFeedbackGiven(prev => ({
+      ...prev,
+      [imageId]: true
+    }));
+    onFeedback(imageId, isPositive);
+  };
 
   return (
     <div className="space-y-6">
@@ -49,7 +65,8 @@ export function DesignResults({ isLoading, images, onFeedback }: DesignResultsPr
                     <Button
                       variant="outline"
                       size="icon"
-                      onClick={() => onFeedback(image.id, true)}
+                      onClick={() => handleFeedback(image.id, true)}
+                      disabled={feedbackGiven[image.id]}
                       className="hover:bg-primary/20"
                     >
                       <ThumbsUp className="h-4 w-4" />
@@ -65,7 +82,8 @@ export function DesignResults({ isLoading, images, onFeedback }: DesignResultsPr
                     <Button
                       variant="outline"
                       size="icon"
-                      onClick={() => onFeedback(image.id, false)}
+                      onClick={() => handleFeedback(image.id, false)}
+                      disabled={feedbackGiven[image.id]}
                       className="hover:bg-destructive/20"
                     >
                       <ThumbsDown className="h-4 w-4" />

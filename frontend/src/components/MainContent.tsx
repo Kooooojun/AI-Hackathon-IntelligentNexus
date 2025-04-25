@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { DesignResults } from "./design/DesignResults";
@@ -26,11 +27,20 @@ export function MainContent() {
   }, []);
 
   const handleFeedback = async (imageId: string, isPositive: boolean) => {
-    // We'll implement feedback handling later
+    const feedbackData = {
+      generation_id: "current-generation", // This will be replaced with actual generation_id
+      image_url: images.find(img => img.id === imageId)?.url,
+      rating: isPositive ? 'up' : 'down'
+    };
+
+    // For now, we'll just show the toast - API integration will come later
     toast({
       title: isPositive ? "感謝您的喜歡！" : "感謝您的回饋！",
       description: "您的意見將幫助我們改進設計生成系統。",
     });
+
+    console.log('Feedback data prepared:', feedbackData);
+    // The actual API call will be implemented later
   };
 
   return (
