@@ -6,7 +6,11 @@ import boto3
 import base64
 import json
 import logging
+from datetime import datetime
+import uuid
+import tempfile
 from typing import List, Optional, Dict, Any, Union
+from app.db.s3 import upload_file_to_s3
 
 logger = logging.getLogger(__name__)
 
@@ -122,48 +126,69 @@ class BedrockClient:
 
     def titan_image(self, prompt: str, width: int = 768, height: int = 768) -> List[str]:
         """
-        使用 Bedrock Titan Image 模型從文字提示生成圖片
-        
-        Args:
-            prompt: 圖片生成提示詞
-            width: 圖片寬度 (默認 768)
-            height: 圖片高度 (默認 768)
-            
-        Returns:
-            List[str]: 生成的圖片 URL 列表
+        使用 Bedrock Titan Image 從文字提示生成圖片並上傳 S3
+        回傳 S3 URL list（若 upload_file_to_s3 回傳 presigned URL，這裡也會回傳 presigned）
         """
         try:
+            MAX_PROMPT_LENGTH = 512
+            if len(prompt) > MAX_PROMPT_LENGTH:
+                logger.warning(f"[Titan] Prompt 長度超過 {MAX_PROMPT_LENGTH}，已自動截斷。")
+                prompt = prompt[:MAX_PROMPT_LENGTH]
+
             payload = {
                 "taskType": "TEXT_IMAGE",
-                "textToImageParams": {
-                    "text": prompt
-                },
+                "textToImageParams": {"text": prompt},
                 "imageGenerationConfig": {
                     "numberOfImages": 1,
                     "height": height,
                     "width": width,
-                    "cfgScale": 8
-                }
+                    "cfgScale": 8,
+                },
             }
-            
-            # 調用 Titan Image 模型
+
             model_id = "amazon.titan-image-generator-v1"
+            logger.info(f"[Titan] Invoking model: {model_id}")
             response = self.client.invoke_model(
                 modelId=model_id,
-                body=json.dumps(payload)
+                body=json.dumps(payload),
             )
-            
-            # 解析回應
-            response_body = json.loads(response['body'].read().decode('utf-8'))
-            image_base64 = response_body['images'][0]
-            
-            # TODO: 保存圖片並返回 URL
-            # 示例: 目前只返回占位符 URL
-            return ["https://placehold.co/768x768.png?text=Bedrock+Titan+Image"]
-        
+
+            body = json.loads(response["body"].read().decode("utf-8"))
+            images_b64 = body.get("images", [])
+            if not images_b64:
+                raise RuntimeError("Titan 回傳空 images 陣列")
+
+            s3_urls: List[str] = []
+            prefix = os.getenv("IMAGE_OUTPUT_PREFIX", "titan_outputs/")
+            timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%S")
+
+            for idx, img_b64 in enumerate(images_b64, start=1):
+                img_bytes = base64.b64decode(img_b64)
+                tmp_dir = tempfile.gettempdir()        # ⚙️ 跨平台安全的暫存目錄
+                tmp_path = os.path.join(tmp_dir, f"{uuid.uuid4()}.png")
+
+                # 1) 寫到 /tmp
+                os.makedirs(os.path.dirname(tmp_path), exist_ok=True)   # ← ★ 保證資料夾存在
+                with open(tmp_path, "wb") as f:
+                    f.write(img_bytes)
+
+                # 2) 上傳到 S3
+                key = f"{prefix}{timestamp}_{idx}.png"
+                s3_uri = upload_file_to_s3(tmp_path, key)    # 回傳 s3://... 或 presigned URL
+                s3_urls.append(s3_uri)
+
+                # 3) 刪掉暫存檔
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+
+            return s3_urls
+
         except Exception as e:
-            logger.error(f"圖像生成失敗: {str(e)}")
-            return ["https://placehold.co/768x768.png?text=Error"]
+            logger.error(f"🌩️ Titan 影像生成失敗: {str(e)}", exc_info=True)
+            # 依需求可改拋例外；這裡回 placeholder 方便前端顯示
+            return ["https://placehold.co/768x768.png?text=Titan+Error"]
 
     def _get_image_data(self, image_path: str) -> bytes:
         """
@@ -205,3 +230,8 @@ class BedrockClient:
         bucket = parts[0]
         key = parts[1] if len(parts) > 1 else ""
         return bucket, key
+
+
+client = BedrockClient()
+urls = client.titan_image("A cyberpunk PC case with hex-mesh front panel, glowing purple LEDs")
+print("Titan Image URLs:", urls)
