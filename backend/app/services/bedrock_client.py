@@ -11,6 +11,7 @@ import uuid
 import tempfile
 from typing import List, Optional, Dict, Any, Union
 from app.db.s3 import upload_file_to_s3
+import secrets
 
 logger = logging.getLogger(__name__)
 
@@ -160,7 +161,7 @@ class BedrockClient:
 
             s3_urls: List[str] = []
             prefix = os.getenv("IMAGE_OUTPUT_PREFIX", "titan_outputs/")
-            timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%S")
+            date_tag = datetime.utcnow().strftime("%y%m%d")   # 6 碼日期：240426
 
             for idx, img_b64 in enumerate(images_b64, start=1):
                 img_bytes = base64.b64decode(img_b64)
@@ -173,7 +174,8 @@ class BedrockClient:
                     f.write(img_bytes)
 
                 # 2) 上傳到 S3
-                key = f"{prefix}{timestamp}_{idx}.png"
+                rand_tag = secrets.token_hex(3)               # 6 hex → 3 bytes
+                key = f"{prefix}{date_tag}_{rand_tag}.png"    # e.g. titan_outputs/240426_a1b2c3.png
                 s3_uri = upload_file_to_s3(tmp_path, key)    # 回傳 s3://... 或 presigned URL
                 s3_urls.append(s3_uri)
 
@@ -232,6 +234,12 @@ class BedrockClient:
         return bucket, key
 
 
-client = BedrockClient()
-urls = client.titan_image("A cyberpunk PC case with hex-mesh front panel, glowing purple LEDs")
-print("Titan Image URLs:", urls)
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--prompt", default="test prompt")
+    args = parser.parse_args()
+
+    client = BedrockClient()
+    print(client.titan_image(args.prompt))
+
