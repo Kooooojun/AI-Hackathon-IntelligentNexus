@@ -1,7 +1,8 @@
-
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { DesignResults } from "./design/DesignResults";
+import { DesignCanvas } from "./design/DesignCanvas";
+import { useApiService } from '@/services/api/apiServiceFactory';
+import { FeedbackPayload, SaveDesignPayload } from '@/services/api/types';
 
 interface GeneratedImage {
   url: string;
@@ -11,36 +12,119 @@ interface GeneratedImage {
 export function MainContent() {
   const [isLoading, setIsLoading] = useState(false);
   const [images, setImages] = useState<GeneratedImage[]>([]);
+  const [currentGenerationId, setCurrentGenerationId] = useState<string | null>(null);
   const { toast } = useToast();
+  const apiService = useApiService();
 
   useEffect(() => {
-    const handleDesignGenerated = (event: CustomEvent<{ images: GeneratedImage[] }>) => {
+    const handleDesignGenerating = () => {
+      setIsLoading(true);
+    };
+    
+    const handleDesignGenerated = (event: CustomEvent<{ 
+      images: GeneratedImage[],
+      generation_metadata: { generation_id: string }
+    }>) => {
       setIsLoading(false);
       setImages(event.detail.images);
+      setCurrentGenerationId(event.detail.generation_metadata.generation_id);
     };
 
+    window.addEventListener("designGenerating" as any, handleDesignGenerating);
     window.addEventListener("designGenerated" as any, handleDesignGenerated);
 
     return () => {
+      window.removeEventListener("designGenerating" as any, handleDesignGenerating);
       window.removeEventListener("designGenerated" as any, handleDesignGenerated);
     };
   }, []);
 
   const handleFeedback = async (imageId: string, isPositive: boolean) => {
-    const feedbackData = {
-      generation_id: "current-generation", // This will be replaced with actual generation_id
-      image_url: images.find(img => img.id === imageId)?.url,
+    if (!currentGenerationId) {
+      console.error("No current generation ID available for feedback");
+      return;
+    }
+
+    const feedbackPayload: FeedbackPayload = {
+      generation_id: currentGenerationId,
+      image_id: imageId,
       rating: isPositive ? 'up' : 'down'
     };
 
-    // For now, we'll just show the toast - API integration will come later
-    toast({
-      title: isPositive ? "感謝您的喜歡！" : "感謝您的回饋！",
-      description: "您的意見將幫助我們改進設計生成系統。",
-    });
+    try {
+      await apiService.submitFeedback(feedbackPayload);
+      
+      toast({
+        title: isPositive ? "感謝您的喜歡！" : "感謝您的回饋！",
+        description: "您的意見將幫助我們改進設計生成系統。",
+      });
+    } catch (error) {
+      console.error("Feedback submission error:", error);
+      toast({
+        title: "回饋提交失敗",
+        description: "請稍後再試。",
+        variant: "destructive",
+      });
+    }
+  };
 
-    console.log('Feedback data prepared:', feedbackData);
-    // The actual API call will be implemented later
+  const handleSave = async (imageId: string) => {
+    const savePayload: SaveDesignPayload = {
+      image_id: imageId
+    };
+    
+    try {
+      await apiService.saveDesign(savePayload);
+      
+      toast({
+        title: "已收藏此設計",
+        description: "設計已成功加入收藏夾。",
+      });
+    } catch (error) {
+      console.error("Save design error:", error);
+      toast({
+        title: "收藏失敗",
+        description: "請稍後再試。",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleRefine = (imageId: string) => {
+    const imageUrl = images.find(img => img.id === imageId)?.url;
+    
+    toast({
+      title: "開始生成變體",
+      description: "系統將基於此設計生成變體設計。",
+    });
+    
+    console.log('Generating variations for:', { imageId, imageUrl });
+    // Dispatch event for sidebar to get image and parameters
+    window.dispatchEvent(new CustomEvent("refineDesign", {
+      detail: { imageId, imageUrl }
+    }));
+  };
+
+  const handleModify = (imageId: string) => {
+    const selectedImage = images.find(img => img.id === imageId);
+    if (!selectedImage) return;
+
+    const designParameters = (selectedImage as any).parameters;
+    
+    toast({
+      title: "修改設計參數",
+      description: "請在左側調整參數後重新生成。",
+    });
+    
+    console.log('Modifying design:', { imageId, imageUrl: selectedImage.url, parameters: designParameters });
+    
+    window.dispatchEvent(new CustomEvent("modifyDesign", {
+      detail: { 
+        imageId, 
+        imageUrl: selectedImage.url,
+        parameters: designParameters
+      }
+    }));
   };
 
   return (
@@ -53,10 +137,13 @@ export function MainContent() {
           Welcome to your AI-powered design assistant. Start by selecting options from the sidebar.
         </p>
         <div className="mt-8">
-          <DesignResults
+          <DesignCanvas
             isLoading={isLoading}
             images={images}
             onFeedback={handleFeedback}
+            onSave={handleSave}
+            onRefine={handleRefine}
+            onModify={handleModify}
           />
         </div>
       </div>
