@@ -47,6 +47,41 @@ except ImportError:
         }
         logger.info(f"[Thread-{request_id[:6]}] STUB Background task finished successfully.")
     trigger_image_generation_task = mock_background_task
+logger = logging.getLogger(__name__)
+# === Bedrock Titan background worker ========================================
+try:
+    from ..services.bedrock_client import BedrockClient
+    _bedrock = BedrockClient()     # 只建一次 client 共用
+
+    def _titan_worker(request_id: str, prompt: str, *_):
+        """
+        背景執行：呼叫 Titan 產圖 → 更新 job_status_store
+        """
+        logger.info(f"[Thread-{request_id[:6]}] Titan job start")
+        try:
+            urls = _bedrock.titan_image(prompt)       # List[str]
+            if urls and not urls[0].endswith("Titan+Error"):
+                job_status_store[request_id] = {
+                    "status": "succeeded",
+                    "image_url": urls[0]
+                }
+                logger.info(f"[Thread-{request_id[:6]}] Titan job done ✅")
+            else:
+                raise RuntimeError("Titan returned empty or error placeholder")
+        except Exception as e:
+            logger.error(f"[Thread-{request_id[:6]}] Titan job failed: {e}", exc_info=True)
+            job_status_store[request_id] = {
+                "status": "failed",
+                "error": str(e)
+            }
+
+    # 直接覆蓋掉（或替換 stub 的） trigger_image_generation_task 變數
+    trigger_image_generation_task = _titan_worker
+    logger.info("🔗  Titan generator wired up for /api/generate")
+
+except ImportError:
+    logger.warning("services.bedrock_client not found → 仍使用先前的 stub")
+# ============================================================================
 
 # --- Logger Setup ---
 logger = logging.getLogger(__name__)
@@ -95,7 +130,8 @@ def allowed_file(filename):
                 "properties": {
                     "status": {"type": "string", "example": "succeeded"},
                     "request_id": {"type": "string", "example": "uuid-abcd-1234"},
-                    "prompt": {"type": "string", "example": "Generated prompt used for the task"}
+                    "prompt": {"type": "string", "example": "Generated prompt used for the task"},
+                    "img_url": {"type": "string", "example": "https://flask-bucket-nexus.s3.amazonaws.com"}
                 }
             }
         },
@@ -203,7 +239,9 @@ def submit_generation_task():
         response_data = {
             "status": "succeeded", # 指 API 請求成功提交
             "request_id": request_id,
-            "prompt": prompt
+            "prompt": prompt,
+            "img_url": "等前端用 GET /api/generate/<id> 輪詢時再取得真正的 URL" 
+            # 返回上傳的圖片 URL** 此時圖片還在背景執行， 根本拿不到 URL
         }
         logger.info(f"Responding to POST /api/generate for {request_id} with: {response_data}")
         total_time = time.time() - request_start_time
