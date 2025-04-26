@@ -232,6 +232,16 @@ class BedrockClient:
         return bucket, key
 
 
-client = BedrockClient()
-urls = client.titan_image("A cyberpunk PC case with hex-mesh front panel, glowing purple LEDs")
-print("Titan Image URLs:", urls)
+# client = BedrockClient()
+# urls = client.titan_image("A cyberpunk PC case with hex-mesh front panel, glowing purple LEDs")
+# print("Titan Image URLs:", urls)
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--prompt", default="test prompt")
+    args = parser.parse_args()
+
+    client = BedrockClient()
+    print(client.titan_image(args.prompt))
+
