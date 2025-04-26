@@ -36,8 +36,12 @@ export interface DesignParameters {
 export interface GeneratedImage {
   id: string;
   url: string;
-  parameters: DesignParameters;
+  job_id?: string; // Important for reliable feedback/actions
+  parameters?: DesignParameters; // Important for modify/refine context
+  parentId?: string; // Provided by mockData, ensure API also provides if possible
+  // Add any other relevant fields from your API or mock data
 }
+
 
 export interface GenerationResult {
   generation_id: string;
