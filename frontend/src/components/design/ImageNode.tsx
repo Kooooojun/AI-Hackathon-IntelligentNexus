@@ -1,15 +1,16 @@
 // src/components/design/ImageNode.tsx
-import React, { useState } from 'react';
-import { GeneratedImage } from '@/services/api/types';
-import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { ThumbsDown, ThumbsUp, WandSparkles, Pencil, Save, ChevronDown, ChevronRight } from "lucide-react";
+import React, { useState, useCallback } from 'react';
+import { GeneratedImage } from '@/services/api/types'; // VERIFY PATH
+import { DesignCard } from './DesignCard'; // VERIFY PATH
+import { Button } from "@/components/ui/button"; // VERIFY PATH
+import { ChevronDown, ChevronRight, GitBranch, CornerDownRight } from "lucide-react"; // Added CornerDownRight for visual cue
 
 interface ImageNodeProps {
   image: GeneratedImage;
   variantMap: Map<string, GeneratedImage[]>;
-  level: number; // Nesting level for indentation/styling
-  // Handlers
+  level: number; // Keep level for potential styling or logic, though not for indent
+  feedbackGivenMap: Record<string, boolean>;
+  savedImageMap: Record<string, boolean>;
   onFeedback: (imageId: string, isPositive: boolean) => void;
   onSave: (imageId: string) => void;
   onRefine: (imageId: string) => void;
@@ -19,106 +20,102 @@ interface ImageNodeProps {
 export function ImageNode({
   image,
   variantMap,
-  level,
+  level, // Keep level if needed elsewhere
+  feedbackGivenMap,
+  savedImageMap,
   onFeedback,
   onSave,
   onRefine,
   onModify
 }: ImageNodeProps) {
 
-  const [feedbackGiven, setFeedbackGiven] = useState<Record<string, boolean>>({});
-  const [isExpanded, setIsExpanded] = useState(true); // State to control variant visibility
+  // ******** DEBUG START ********
+  console.log(`DEBUG: ImageNode rendering for image ID: ${image?.id}, Level: ${level}`);
+  console.log(`DEBUG: Received feedbackGivenMap:`, feedbackGivenMap);
+  console.log(`DEBUG: Received savedImageMap:`, savedImageMap);
+
+  // Explicit check before accessing might prevent crash, but hides the root cause
+  if (typeof feedbackGivenMap === 'undefined' || typeof savedImageMap === 'undefined') {
+      console.error(`ERROR in ImageNode for ${image?.id}: feedbackGivenMap or savedImageMap is undefined!`);
+      // You might return null or a placeholder here to avoid crashing during debug
+      // return <div>Error loading status maps for {image?.id}</div>;
+  }
+  // ******** DEBUG END ********
+
+  const [isExpanded, setIsExpanded] = useState(true);
 
   const directVariants = variantMap.get(image.id) || [];
   const hasVariants = directVariants.length > 0;
 
-  const handleFeedback = (imageId: string, isPositive: boolean) => {
-    setFeedbackGiven(prev => ({ ...prev, [imageId]: true }));
-    onFeedback(imageId, isPositive);
-  };
-
-  const toggleExpand = () => {
+  const toggleExpand = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
     if (hasVariants) {
-        setIsExpanded(!isExpanded);
+        setIsExpanded(prev => !prev);
     }
-  };
+  }, [hasVariants]);
+
+  const feedbackGiven = feedbackGivenMap[image.id] ?? false;
+  const isSaved = savedImageMap[image.id] ?? false;
 
   return (
-    <div className={`ml-${level * 4} p-3 border-l-2 ${level > 0 ? 'border-muted pl-4 mt-2' : 'border-transparent'}`}> {/* Indentation and border */}
-      <div className="group relative overflow-hidden rounded-lg border shadow-sm transition-shadow hover:shadow-md mb-2 w-full sm:w-64 md:w-72 inline-block align-top"> {/* Adjust width as needed */}
-          {/* --- Image Display --- */}
-          <img
-            src={image.url}
-            alt={`Generated design ${image.id.substring(0, 6)}`}
-            className="w-full h-auto object-cover aspect-square transition-transform duration-300 ease-in-out group-hover:scale-105"
-            loading="lazy"
+    // Outermost container is now a flex row, aligning items at the start
+    <div className={`flex items-start gap-4 p-2`}> {/* Use gap for spacing */}
+
+      {/* 1. Parent Node Section (Card + Optional Toggle) */}
+      <div className="flex flex-col items-center flex-shrink-0"> {/* Container for card and its button */}
+        <div className="w-full sm:w-auto max-w-xs"> {/* Control card width */}
+          <DesignCard
+            image={image}
+            feedbackGiven={feedbackGiven}
+            isSaved={isSaved}
+            onFeedback={onFeedback}
+            onSave={onSave}
+            onRefine={onRefine}
+            onModify={onModify}
           />
-          {/* --- Action Buttons Overlay --- */}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end justify-center p-1">
-             <TooltipProvider delayDuration={100}>
-                 <div className="flex justify-center items-center gap-1 bg-card/80 backdrop-blur-sm p-1 rounded-md">
-                    {/* Feedback */}
-                    <Tooltip>
-                      <TooltipTrigger asChild><Button variant="ghost" size="icon-xs" onClick={() => handleFeedback(image.id, true)} disabled={feedbackGiven[image.id]} className="text-white hover:bg-primary/30 h-6 w-6"><ThumbsUp className="h-3 w-3" /></Button></TooltipTrigger>
-                      <TooltipContent><p>喜歡</p></TooltipContent>
-                    </Tooltip>
-                    <Tooltip>
-                      <TooltipTrigger asChild><Button variant="ghost" size="icon-xs" onClick={() => handleFeedback(image.id, false)} disabled={feedbackGiven[image.id]} className="text-white hover:bg-destructive/30 h-6 w-6"><ThumbsDown className="h-3 w-3" /></Button></TooltipTrigger>
-                       <TooltipContent><p>不喜歡</p></TooltipContent>
-                    </Tooltip>
-                    {/* Refine */}
-                    <Tooltip>
-                       <TooltipTrigger asChild><Button variant="ghost" size="icon-xs" onClick={() => onRefine(image.id)} className="text-white hover:bg-blue-500/30 h-6 w-6"><WandSparkles className="h-3 w-3" /></Button></TooltipTrigger>
-                       <TooltipContent><p>生成變體</p></TooltipContent>
-                    </Tooltip>
-                    {/* Modify */}
-                     <Tooltip>
-                       <TooltipTrigger asChild><Button variant="ghost" size="icon-xs" onClick={() => onModify(image.id)} className="text-white hover:bg-green-500/30 h-6 w-6"><Pencil className="h-3 w-3" /></Button></TooltipTrigger>
-                       <TooltipContent><p>以此修改</p></TooltipContent>
-                     </Tooltip>
-                    {/* Save */}
-                    <Tooltip>
-                       <TooltipTrigger asChild><Button variant="ghost" size="icon-xs" onClick={() => onSave(image.id)} className="text-white hover:bg-yellow-500/30 h-6 w-6"><Save className="h-3 w-3" /></Button></TooltipTrigger>
-                       <TooltipContent><p>儲存</p></TooltipContent>
-                    </Tooltip>
-                 </div>
-             </TooltipProvider>
-          </div>
-          {/* --- Expand/Collapse Toggle --- */}
-          {hasVariants && (
-              <button
-                  onClick={toggleExpand}
-                  className="absolute top-1 right-1 bg-card/70 backdrop-blur-sm rounded-full p-0.5 text-muted-foreground hover:text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                  aria-label={isExpanded ? "收起變體" : "展開變體"}
-              >
-                  {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-              </button>
-          )}
+        </div>
+        {/* Expand/Collapse button below the card if it has variants */}
+        {hasVariants && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={toggleExpand}
+            className="mt-1 text-muted-foreground hover:text-foreground"
+            aria-label={isExpanded ? "收起變體" : "展開變體"}
+          >
+            {isExpanded ? <ChevronDown className="h-4 w-4 mr-1" /> : <ChevronRight className="h-4 w-4 mr-1" />}
+            <span>{isExpanded ? `收起 ${directVariants.length} 個變體` : `展開 ${directVariants.length} 個變體`}</span>
+          </Button>
+        )}
       </div>
 
-      {/* --- Recursive Rendering of Variants --- */}
+      {/* Optional: Visual connector (simple example) */}
+       {hasVariants && isExpanded && (
+            <div className="pt-16"> {/* Adjust vertical alignment */}
+                 <CornerDownRight className="h-6 w-6 text-muted-foreground" />
+            </div>
+       )}
+
+      {/* 2. Children Variants Section (Rendered Horizontally) */}
       {hasVariants && isExpanded && (
-        <div className="mt-2"> {/* Container for children */}
-          {/* Optional: Add a small indicator line */}
-          {/* <div className="border-l-2 border-muted pl-4"> */}
-              {directVariants.map(variant => (
-                <ImageNode
-                  key={variant.id}
-                  image={variant}
-                  variantMap={variantMap}
-                  level={level + 1} // Increase level for children
-                  onFeedback={onFeedback}
-                  onSave={onSave}
-                  onRefine={onRefine}
-                  onModify={onModify}
-                />
-              ))}
-          {/* </div> */}
+         // This container uses flex to lay out children horizontally
+        <div className="flex items-start space-x-4 pt-4 pl-2 border-l border-dashed border-muted"> {/* Horizontal layout for children + border */}
+          {directVariants.map(variant => (
+            <ImageNode // Recursive call
+              key={variant.id}
+              image={variant}
+              variantMap={variantMap}
+              level={level + 1} // Pass level down
+              feedbackGivenMap={feedbackGivenMap}
+              savedImageMap={savedImageMap}
+              onFeedback={onFeedback}
+              onSave={onSave}
+              onRefine={onRefine}
+              onModify={onModify}
+            />
+          ))}
         </div>
       )}
     </div>
   );
 }
-// Note: You might need to configure Tailwind CSS JIT to recognize dynamic classes like `ml-4`, `ml-8` etc.
-// or define them explicitly if using standard Tailwind. Add `size-icon-xs` to global CSS if needed.
-// Example: .size-icon-xs { @apply h-6 w-6; }
