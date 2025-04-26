@@ -4,3 +4,4 @@ Flasgger==0.9.7.1
 boto3==1.34.108
 python-dotenv==1.0.1
 Flask-Cors
+pandas

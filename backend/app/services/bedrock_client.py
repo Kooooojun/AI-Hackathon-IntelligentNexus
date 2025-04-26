@@ -12,6 +12,7 @@ import tempfile
 from typing import List, Optional, Dict, Any, Union
 from app.db.s3 import upload_file_to_s3
 import secrets
+import random
 
 logger = logging.getLogger(__name__)
 
@@ -144,6 +145,7 @@ class BedrockClient:
                     "height": height,
                     "width": width,
                     "cfgScale": 8,
+                    "seed": random.randint(0, 999999),  # ✅ 每次隨機
                 },
             }
 
@@ -160,6 +162,7 @@ class BedrockClient:
                 raise RuntimeError("Titan 回傳空 images 陣列")
 
             s3_urls: List[str] = []
+            presigned_urls: List[str] = []
             prefix = os.getenv("IMAGE_OUTPUT_PREFIX", "titan_outputs/")
             date_tag = datetime.utcnow().strftime("%y%m%d")   # 6 碼日期：240426
 
@@ -179,13 +182,19 @@ class BedrockClient:
                 s3_uri = upload_file_to_s3(tmp_path, key)    # 回傳 s3://... 或 presigned URL
                 s3_urls.append(s3_uri)
 
+                # 生成可訪問的 presigned URL 4.26 20:25
+                from app.db.s3 import generate_presigned_url
+                presigned_url = generate_presigned_url(key, expires_in=3600)  # 1 小時有效期    
+                presigned_urls.append(presigned_url)
+                logger.warning(f"\n上傳成功: {presigned_url}")
+
                 # 3) 刪掉暫存檔
                 try:
                     os.remove(tmp_path)
                 except OSError:
                     pass
 
-            return s3_urls
+            return presigned_urls
 
         except Exception as e:
             logger.error(f"🌩️ Titan 影像生成失敗: {str(e)}", exc_info=True)

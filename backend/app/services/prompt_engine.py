@@ -12,7 +12,7 @@ def build_prompt(style, lighting, colors, description, image_paths=None):
     將使用者輸入組合為一段清楚、具風格的 prompt。
     """
     prompt_parts = []
-    prompt_parts.append("Create a photo of a product with the following features:")
+    #prompt_parts.append("Create a photo of a product with the following features:")
 
     # 1.設計風格 + 燈效
     if style:
