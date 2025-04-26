@@ -1,4 +1,4 @@
-
+// DesignInputs.tsx
 import { FileText } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
@@ -91,93 +91,122 @@ export function DesignInputs() {
     setDescription(newText);
   };
 
-  const handleGenerate = async () => {
-    if (!description && !referenceImageId) {
-      toast({
-        title: "請輸入設計描述或選擇參考圖",
-        description: "請在設計描述欄位中輸入您的設計概念或選擇參考圖片。",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (!style || !color) {
-      toast({
-        title: "請選擇風格和顏色",
-        description: "請確保已選擇設計風格和主要顏色。",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const payload: GeneratePayload = {
-      description,
-      features: {
-        style,
-        color,
-        lighting: lighting === "yes",
-      },
-    };
-
-    if (referenceImageId) {
-      payload.reference_image_id = referenceImageId;
-    }
-
-    try {
-      window.dispatchEvent(new CustomEvent("designGenerating"));
-      setIsGenerating(true);
-
-      if (selectedFile) {
-        const reader = new FileReader();
-        reader.onloadend = async () => {
-          const base64String = reader.result as string;
-          payload.base64_image = base64String.split(',')[1];
-          await sendGenerateRequest(payload);
-        };
-        reader.readAsDataURL(selectedFile);
-      } else if (imagePreview && imagePreview.startsWith('data:')) {
-        payload.base64_image = imagePreview.split(',')[1];
-        await sendGenerateRequest(payload);
-      } else {
-        await sendGenerateRequest(payload);
-      }
-    } catch (error) {
-      console.error("Generation error:", error);
-      setIsGenerating(false);
-      toast({
-        title: "生成失敗",
-        description: "請稍後再試。如果問題持續發生，請聯繫支援團隊。",
-        variant: "destructive",
-      });
-    }
-  };
-
   const sendGenerateRequest = async (payload: GeneratePayload) => {
     try {
-      const result = await apiService.generateDesigns(payload);
-      
-      window.dispatchEvent(new CustomEvent("designGenerated", { 
-        detail: {
-          images: result.images.map(img => ({
-            url: img.url,
-            id: img.id,
-          })),
-          generation_metadata: result,
-        },
-      }));
-      
+      // Call the function to START the generation job
+      const startResponse = await apiService.startGeneration(payload); // Returns { job_id: ... }
+
+      // Check if we got a job_id back
+      if (startResponse && startResponse.job_id) {
+        console.log("Generation started with Job ID:", startResponse.job_id);
+
+        // --- 開始 DEBUG ---
+        if (startResponse.job_id) {
+            console.log(`DEBUG: DesignInputs - PREPARING to dispatch startPollingJob event with ID: ${startResponse.job_id}`);
+            const eventPayload = { detail: { job_id: startResponse.job_id } };
+            console.log('DEBUG: DesignInputs - Event payload:', eventPayload);
+
+            try {
+                window.dispatchEvent(new CustomEvent("startPollingJob", eventPayload));
+                console.log('DEBUG: DesignInputs - DISPATCHED startPollingJob event successfully.'); // <--- 看這行有沒有出現
+            } catch (dispatchError) {
+                console.error('DEBUG: DesignInputs - ERROR dispatching startPollingJob event:', dispatchError);
+            }
+        } else {
+            console.error('DEBUG: DesignInputs - Cannot dispatch event, Job ID is missing!');
+        }
+        // --- 結束 DEBUG ---
+                      
+        
+        // Dispatch the event for MainContent to START POLLING
+        window.dispatchEvent(new CustomEvent("startInitialGeneration", {
+          detail: { job_id: startResponse.job_id }
+        }));
+
+        // Optional: Show a toast indicating the job has started
+        toast({
+          title: "請求已提交",
+          description: `生成任務已啟動，請稍候結果。(Job: ${startResponse.job_id.substring(0, 6)}...)`
+        });
+      } else {
+        // Handle case where job_id might not be returned
+        throw new Error("Failed to start generation job: No Job ID received.");
+      }
+
+      // Reset reference image ID after successfully starting the job
       setReferenceImageId(null);
-    } catch (error) {
-      console.error("API error:", error);
+
+    } catch (error: any) { // Catch any errors during startGeneration
+      console.error("API start error:", error);
       toast({
-        title: "生成失敗",
-        description: "請稍後再試。如果問題持續發生，請聯繫支援團隊。",
+        title: "啟動生成失敗",
+        description: error.message || "無法啟動設計生成，請檢查參數或稍後再試。",
         variant: "destructive",
       });
+      // Ensure loading state is reset if start fails
+      setIsGenerating(false); // Reset loading specifically on error here
+      // Re-throw the error if you want handleGenerate to catch it too, otherwise remove throw
+      // throw error;
     } finally {
-      setIsGenerating(false);
+      // setIsGenerating should be managed by MainContent based on polling status,
+      // but we might set it to false here if the START request itself fails.
+      // Let's remove the finally block here, rely on MainContent for isLoading
+      // based on polling, and handle the error case explicitly above.
+      // setIsGenerating(false);
     }
   };
+
+  const handleGenerate = async () => {
+  // 檢查必要欄位（可以加上判斷，不然就有預設值）
+  if (!description.trim()) {
+    toast({ title: "請填寫設計描述", variant: "destructive" });
+    return;
+  }
+  if (!style || !color) {
+    toast({ title: "請選擇風格與顏色", variant: "destructive" });
+    return;
+  }
+
+  const payload: GeneratePayload = {
+    description: description,
+    features: {
+      style,
+      color,
+      lighting: lighting === "yes",
+      description,
+    },
+    reference_image_id: referenceImageId || undefined,
+  };
+
+  setIsGenerating(true);
+  window.dispatchEvent(new CustomEvent("designGenerating"));
+
+  try {
+    if (selectedFile) {
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        const base64String = reader.result as string;
+        payload.base64_image = base64String.split(',')[1];
+        await sendGenerateRequest(payload);
+      };
+      reader.onerror = () => {
+        setIsGenerating(false);
+        toast({ title: "圖片讀取錯誤", variant: "destructive" });
+      };
+      reader.readAsDataURL(selectedFile);
+    } else if (imagePreview && imagePreview.startsWith('data:')) {
+      payload.base64_image = imagePreview.split(',')[1];
+      await sendGenerateRequest(payload);
+    } else {
+      await sendGenerateRequest(payload);
+    }
+  } catch (error) {
+    console.error("Error during handleGenerate flow:", error);
+    setIsGenerating(false);
+  }
+};
+
+
 
   return (
     <div className="space-y-6">

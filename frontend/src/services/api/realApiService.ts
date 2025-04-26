@@ -3,6 +3,9 @@ import {
   ApiService, 
   GeneratePayload, 
   GenerationResult, 
+  StartGenerationResponse,
+  JobStatusResponse,
+  GeneratedImage,
   FeedbackPayload, 
   FeedbackResponse,
   SaveDesignPayload,
@@ -11,63 +14,50 @@ import {
 
 export class RealApiService implements ApiService {
   private apiUrl: string;
-  
-  constructor(apiUrl: string = 'https://api.example.com') {
+
+  constructor(apiUrl: string = 'https://api.example.com') { // Use your actual API URL
     this.apiUrl = apiUrl;
   }
-  
-  async generateDesigns(payload: GeneratePayload): Promise<GenerationResult> {
-    console.log('Real API - Generate Designs:', payload);
-    
-    // In a real implementation, this would make an actual API call
-    const response = await fetch(`${this.apiUrl}/designs/generate`, {
+
+  // New method to START generation
+  async startGeneration(payload: GeneratePayload): Promise<StartGenerationResponse> {
+    console.log('Real API - Start Generation:', payload);
+    // Replace '/designs/generate/start' with your actual endpoint to trigger the job
+    const response = await fetch(`${this.apiUrl}/designs/generate/start`, { // Example endpoint
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
-    }
-    
-    return await response.json();
+    if (!response.ok) { throw new Error(`API error: ${response.status}`); }
+    return await response.json(); // Should return { job_id: "..." }
   }
-  
-  async submitFeedback(payload: FeedbackPayload): Promise<FeedbackResponse> {
-    console.log('Real API - Submit Feedback:', payload);
-    
-    const response = await fetch(`${this.apiUrl}/feedback`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    });
-    
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
+
+  // New method to CHECK job status
+  async checkJobStatus(jobId: string): Promise<JobStatusResponse> {
+    console.log('Real API - Check Job Status:', jobId);
+    // Replace '/designs/generate/status/{jobId}' with your actual status endpoint
+    const response = await fetch(`<span class="math-inline">\{this\.apiUrl\}/designs/generate/status/</span>{jobId}`); // Example endpoint
+    if (!response.ok) { throw new Error(`API error: ${response.status}`); }
+    // Backend should return { job_id: "...", status: "...", images?: [...], error?: "..." }
+    const data: JobStatusResponse = await response.json();
+
+    // **Important:** Ensure the backend response for 'succeeded' includes
+    // image objects with 'id', 'url', and 'parameters'.
+    // If the backend only returns URLs, you might need to construct the full
+    // GeneratedImage object here or request parameters separately if needed.
+    // Example check (adapt based on your actual response):
+    if (data.status === 'succeeded' && data.images) {
+        data.images = data.images.map(img => ({
+            ...img,
+            // Ensure 'parameters' are included if your backend provides them,
+            // otherwise, you might need to fetch/reconstruct them.
+            parameters: img.parameters || {} // Placeholder
+        }));
     }
-    
-    return await response.json();
+    return data;
   }
-  
-  async saveDesign(payload: SaveDesignPayload): Promise<SaveDesignResponse> {
-    console.log('Real API - Save Design:', payload);
-    
-    const response = await fetch(`${this.apiUrl}/designs/save`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    });
-    
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
-    }
-    
-    return await response.json();
-  }
+
+  // Keep submitFeedback, saveDesign
+  async submitFeedback(payload: FeedbackPayload): Promise<FeedbackResponse> { /* ... */ }
+  async saveDesign(payload: SaveDesignPayload): Promise<SaveDesignResponse> { /* ... */ }
 }
