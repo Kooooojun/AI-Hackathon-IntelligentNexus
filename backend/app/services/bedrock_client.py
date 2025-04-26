@@ -29,7 +29,7 @@ class BedrockClient:
             access_key_id: AWS 存取金鑰 ID，默認使用環境變數 AWS_ACCESS_KEY_ID
             secret_access_key: AWS 秘密存取金鑰，默認使用環境變數 AWS_SECRET_ACCESS_KEY
         """
-        self.region_name = region_name or os.getenv("AWS_REGION", "us-east-1")
+        self.region_name = region_name or os.getenv("AWS_REGION", "us-east-2")
         self.access_key_id = access_key_id or os.getenv("AWS_ACCESS_KEY_ID")
         self.secret_access_key = secret_access_key or os.getenv("AWS_SECRET_ACCESS_KEY")
         
@@ -47,58 +47,75 @@ class BedrockClient:
             logger.error(f"初始化 Bedrock 客戶端失敗: {str(e)}")
             raise
 
-    def image_to_text(self, image_path: str) -> str:
+    def image_to_text(
+        self,
+        image_path: str,
+        prompt: Optional[str] = None,
+        model_id: Optional[str] = None,
+        max_tokens: int = 512,
+        temperature: float = 0.5,
+    ) -> str:
         """
+        使用 AWS Bedrock Claude 3.x (支援 vision) 將圖片轉換為文字描述。
         Args:
             image_path: 圖片的本地路徑或 S3 URL
-        
+            prompt: （可選）自訂提示詞（預設為較詳細的描述）
+            model_id: （可選）Bedrock Claude Vision 模型 ID，預設用 Claude 3.5 Sonnet
+            max_tokens: 最大回傳 tokens 數（預設 512）
+            temperature: 生成溫度（預設 0.5）
         Returns:
             str: 圖片的文字描述
         """
         try:
+            # 預設 prompt
+            if not prompt:
+                prompt = (
+                    "Describe this image in detail, focusing on colors, objects, style, "
+                    "and visual elements that would be useful for generating a similar image."
+                )
+            # 預設模型 ID（需確定你 Bedrock 有權限）
+            if not model_id:
+                model_id = "anthropic.claude-3-7-sonnet-20250219-v1:0"
+
+            # 取得圖片 bytes 並 base64 encode
             image_bytes = self._get_image_data(image_path)
-            
             base64_image = base64.b64encode(image_bytes).decode('utf-8')
-            
-            # 準備請求內容
-            payload = {
+
+            # 組建 request payload，格式與官方 sample code 一致
+            native_request = {
                 "anthropic_version": "bedrock-2023-05-31",
-                "max_tokens": 300,
+                "max_tokens": max_tokens,
+                "temperature": temperature,
                 "messages": [
                     {
                         "role": "user",
                         "content": [
-                            {
-                                "type": "text",
-                                "text": "Describe this image in detail, focusing on colors, objects, style, and visual elements that would be useful for generating a similar image."
-                            },
+                            {"type": "text", "text": prompt},
                             {
                                 "type": "image",
                                 "source": {
                                     "type": "base64",
-                                    "media_type": "image/jpeg",
+                                    "media_type": "image/webp",  # 或根據實際檔案判斷
                                     "data": base64_image
                                 }
                             }
                         ]
                     }
-                ]
+                ],
             }
-            
-            # 使用 Claude 3.5 Sonnet 模型
-            model_id = "anthropic.claude-3-5-sonnet-20240620-v1:0"
-            
+
             logger.info(f"正在使用模型: {model_id}")
             response = self.client.invoke_model(
                 modelId=model_id,
-                body=json.dumps(payload)
+                body=json.dumps(native_request)
             )
-            
-            response_body = json.loads(response['body'].read().decode('utf-8'))
-            description = response_body['content'][0]['text']
-            
+
+            # 處理回應
+            response_body = json.loads(response["body"].read())
+            # Claude 3 Vision 系列的格式
+            description = response_body["content"][0]["text"]
             return description
-        
+
         except Exception as e:
             logger.error(f"圖像處理失敗: {str(e)}")
             return f"圖像處理錯誤: {str(e)}"
