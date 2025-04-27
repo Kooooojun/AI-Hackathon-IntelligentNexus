@@ -3,7 +3,10 @@ import io
 import boto3, json, secrets
 
 MAX_TITAN_LEN = 512                 # Titan 上限
-TARGET_LEN    = 300                 # 壓縮後目標
+TARGET_LEN    = 250                 # 壓縮後目標
+
+
+
 def extract_image_features(image_paths):
     """
     暫時只是回傳檔名清單。未來可替換為 image-to-text 模型。
@@ -58,7 +61,10 @@ def build_prompt(style, lighting, colors, description, image_paths=None):
         # print(f"Compressed to {len(prompt)} chars")
     # -------------------------------------
 
-    prompt = prompt + ", full product shot, straight-on, no crop"
+    # prompt = prompt + ", full product shot, straight-on, no crop"
+    prompt = "Make sure the image shows a PC case and not any other objects." + prompt + ", full product shot, straight-on, no crop"
+
+
     # print(f"\n\nFinal prompt {len(prompt)} chars \n\n")
     return prompt
 
