@@ -59,7 +59,7 @@ try:
         """
         logger.info(f"[Thread-{request_id[:6]}] Titan job start")
         try:
-            urls = _bedrock.titan_image(prompt)       # List[str]
+            urls = _bedrock.new_titan(prompt,image_paths=None)       # List[str]
             if urls and not urls[0].endswith("Titan+Error"):
                 job_status_store[request_id] = {
                     "status": "succeeded",

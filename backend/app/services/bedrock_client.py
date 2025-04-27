@@ -201,6 +201,126 @@ class BedrockClient:
             # 依需求可改拋例外；這裡回 placeholder 方便前端顯示
             return ["https://placehold.co/768x768.png?text=Titan+Error"]
 
+    def new_titan(
+        self,
+        prompt: str,
+        image_paths: Union[str, List[str], None] = None,   # ← 1. 參數型別允許 None
+        width: int = 768,
+        height: int = 768,
+        num_output_images: int = 2,
+        quality: str = "standard"
+    ) -> List[str]:
+        """
+        使用 Bedrock Titan Image Generator 基於現有圖片和文字提示進行編輯
+        
+        Args:
+            prompt: 描述想要編輯/生成的內容的文字提示
+            image_paths: 要編輯的圖片路徑或S3 URL，可以是單一字串或列表
+            width: 輸出圖片寬度 (默認 768)
+            height: 輸出圖片高度 (默認 768)
+            num_output_images: 要生成的圖片數量 (默認 2)
+            
+        Returns:
+            List[str]: 生成的圖片的可訪問 URL 列表
+        """
+        try:
+            # 處理輸入參數
+            MAX_PROMPT_LENGTH = 512
+            if len(prompt) > MAX_PROMPT_LENGTH:
+                logger.warning(f"[Titan Edit] Prompt 長度超過 {MAX_PROMPT_LENGTH}，已自動截斷。")
+                prompt = prompt[:MAX_PROMPT_LENGTH]
+
+             # ---------- 3. 確保 image_paths 是 list ----------
+            if not image_paths:                     # None、[]、"" 都會進來
+                logger.warning("[Titan Edit] 未提供 image_paths，將改用純文字生圖流程…")
+                return self.titan_image(prompt=prompt, width=width, height=height)
+
+            # 將單一圖片路徑轉換為列表
+            if isinstance(image_paths, str):
+                image_paths = [image_paths]
+
+            # 限制輸入圖片數量
+            if len(image_paths) > 2:
+                logger.warning("[Titan Edit] 輸入圖片數量超過2張，僅使用前2張。")
+                image_paths = image_paths[:2]
+            
+            # 獲取並編碼所有輸入圖片
+            base64_images = []
+            for img_path in image_paths:
+                try:
+                    image_bytes = self._get_image_data(img_path)  # 使用圖片標準化方法
+                    base64_image = base64.b64encode(image_bytes).decode('utf-8')
+                    base64_images.append(base64_image)
+                    logger.info(f"成功處理圖片: {os.path.basename(img_path) if isinstance(img_path, str) else 'S3 image'}")
+                except Exception as img_error:
+                    logger.error(f"處理圖片失敗: {str(img_error)}")
+                    return [f"https://placehold.co/768x768.png?text=Image+Processing+Error:{str(img_error)[:20]}"] * num_output_images
+ 
+            payload = {
+                "taskType": "IMAGE_VARIATION",
+                "imageVariationParams": {
+                    "images": base64_images,   # 1‒5 張
+                    "text": prompt, # optional，但建議帶上
+                    "similarityStrength": 0.2             
+                },
+                "imageGenerationConfig": {
+                    "numberOfImages": num_output_images,
+                    "height": height,
+                    "width": width,
+                    "quality": quality,        # 必填
+                    "cfgScale": 8.0,
+                    "seed": random.randint(1, 1_000_000)
+                }
+            }
+
+            model_id = "amazon.titan-image-generator-v2:0"
+            response = self.client.invoke_model(
+                modelId=model_id,
+                body=json.dumps(payload),
+                contentType="application/json",
+                accept="application/json"
+            )
+            body = json.loads(response["body"].read())
+            images_b64 = body["images"]
+            if not images_b64:
+                raise RuntimeError("Titan Edit 回傳空 images 陣列")
+
+            # 處理生成的圖片
+            presigned_urls: List[str] = []
+            prefix = os.getenv("IMAGE_OUTPUT_PREFIX", "titan_outputs/")
+            date_tag = datetime.utcnow().strftime("%y%m%d")
+                        
+            for idx, img_b64 in enumerate(images_b64, start=1):
+                # 解碼 base64 圖片
+                img_bytes = base64.b64decode(img_b64)
+                
+                # 直接將二進制數據上傳到 S3，無需臨時文件
+                rand_tag = secrets.token_hex(3)
+                key = f"{prefix}edit_{date_tag}_{rand_tag}_{idx}.png"
+                
+                # 使用 boto3 直接上傳
+                from app.db.s3 import _bucket, _s3_client
+                bucket = _bucket()
+                s3_client = _s3_client()
+                s3_client.put_object(
+                    Bucket=bucket,
+                    Key=key,
+                    Body=img_bytes,
+                    ContentType="image/png",
+                    ContentDisposition="inline"  # 確保瀏覽器直接顯示而非下載
+                )
+                
+                # 生成可訪問 URL
+                from app.db.s3 import generate_presigned_url
+                presigned_url = generate_presigned_url(key, expires_in=86400)  # 24小時有效
+                presigned_urls.append(presigned_url)
+
+            return presigned_urls
+
+        except Exception as e:
+            logger.error(f"🌩️ Titan 圖片編輯失敗: {str(e)}", exc_info=True)
+            return ["https://placehold.co/768x768.png?text=Titan+Edit+Error"] * 2  # 返回兩個錯誤圖片佔位符
+
     def _get_image_data(self, image_path: str) -> bytes:
         """
         從本地路徑或 S3 獲取圖片數據
