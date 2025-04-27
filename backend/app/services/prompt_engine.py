@@ -1,5 +1,9 @@
 import os
+import io
+import boto3, json, secrets
 
+MAX_TITAN_LEN = 512                 # Titan 上限
+TARGET_LEN    = 300                 # 壓縮後目標
 def extract_image_features(image_paths):
     """
     暫時只是回傳檔名清單。未來可替換為 image-to-text 模型。
@@ -40,6 +44,22 @@ def build_prompt(style, lighting, colors, description, image_paths=None):
 
     # 組合成單一段落
     prompt = " | ".join(prompt_parts)
+
+    print("==== RAW prompt ({0} chars) ====\n{1}".format(len(prompt), prompt))
+
+    # print(f"Prompt {len(prompt)} chars > {MAX_TITAN_LEN}, compressing…")
+    # ---------- 若過長，自動壓縮 ----------
+    if len(prompt) > MAX_TITAN_LEN:
+
+        prompt = _compress_with_sonnet(prompt)
+
+        print("==== COMPRESSED prompt ({0} chars) ====\n{1}".format(len(prompt), prompt))
+
+        print(f"Compressed to {len(prompt)} chars")
+    # -------------------------------------
+
+    prompt = prompt + ", full product shot, straight-on, no crop"
+    print(f"\n\nFinal prompt {len(prompt)} chars \n\n")
     return prompt
 
 # --- 查詢 Product_table.csv ------------------------------------------------
@@ -112,8 +132,6 @@ def find_matching_keywords(style=None, lighting=None, colors=None):
 # )
 # print   (f"{keywords}")
 
-import io
-import boto3
 from botocore.exceptions import ClientError
 
 # === 🔧 只要補上這段就能解決 NameError =========================
@@ -170,6 +188,50 @@ def _load_product_table():
     if not os.path.exists(local_fallback):
         raise FileNotFoundError("Product_table.csv not found in S3 nor local data folder")
     return pd.read_csv(local_fallback)
+
+
+def _compress_with_sonnet(prompt: str) -> str:
+    """呼叫 Claude 3 Sonnet，把 prompt 壓到 ~TARGET_LEN 字元"""
+    # system_msg = (
+    #     "You are a prompt compressor for an image-generation model. "
+    #     f"Rewrite the user's description in ≤ {TARGET_LEN} characters, "
+    #     "keep all key visual details, comma-separated. "
+    #     "Return a single line only."
+    # )
+    # system_msg = (
+    #     "You are a prompt compressor for an image-generation model. "
+    #     "Rewrite to ≤ {TARGET_LEN} chars BUT keep every keyword after 'Keywords:' exactly. "
+    #     "Preserve comma-separated keyword list verbatim."
+    # )
+    system_msg = (
+        f"Rewrite the user's description to ≤{TARGET_LEN} characters TOTAL, "
+        "including the keyword list. "
+        "保留最重要且不超過 15 個 Keywords，其餘捨棄。"
+    )
+    payload = {
+        "anthropic_version": "bedrock-2023-05-31",
+        "system": system_msg,                 # ← 放這裡
+        "max_tokens": 512,
+        "temperature": 0.3,
+        "messages": [
+            {
+                "role": "user",               # 只能 user / assistant
+                "content": prompt
+            }
+        ]
+    }
+
+    br = boto3.client(
+        "bedrock-runtime",
+        region_name=os.getenv("AWS_REGION", "us-west-2"),
+        aws_access_key_id=_get_cfg("AWS_ACCESS_KEY_ID"),
+        aws_secret_access_key=_get_cfg("AWS_SECRET_ACCESS_KEY"),
+    )
+    resp = br.invoke_model(
+        modelId="anthropic.claude-3-5-sonnet-20241022-v2:0",
+        body=json.dumps(payload)
+    )
+    return json.loads(resp["body"].read())["content"][0]["text"].strip()
 
 #from app.services.prompt_engine import _load_product_table
 # def main():
