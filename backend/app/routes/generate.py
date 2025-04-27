@@ -108,8 +108,8 @@ def allowed_file(filename):
 # --------------------
 
 # --- API Endpoints ---
-
-@bp.route("/generate", methods=["POST"])
+@bp.route("/generate", methods=["POST"], strict_slashes=False)
+@bp.route("/generate", methods=["POST"], strict_slashes=False)
 @swag_from({
     "tags": ["Generate"],
     "summary": "Submit design task, get request_id (Async)",
