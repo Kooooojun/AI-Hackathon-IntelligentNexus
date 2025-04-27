@@ -45,7 +45,7 @@ def build_prompt(style, lighting, colors, description, image_paths=None):
     # 組合成單一段落
     prompt = " | ".join(prompt_parts)
 
-    print("==== RAW prompt ({0} chars) ====\n{1}".format(len(prompt), prompt))
+    # print("==== RAW prompt ({0} chars) ====\n{1}".format(len(prompt), prompt))
 
     # print(f"Prompt {len(prompt)} chars > {MAX_TITAN_LEN}, compressing…")
     # ---------- 若過長，自動壓縮 ----------
@@ -53,13 +53,13 @@ def build_prompt(style, lighting, colors, description, image_paths=None):
 
         prompt = _compress_with_sonnet(prompt)
 
-        print("==== COMPRESSED prompt ({0} chars) ====\n{1}".format(len(prompt), prompt))
+        # print("==== COMPRESSED prompt ({0} chars) ====\n{1}".format(len(prompt), prompt))
 
-        print(f"Compressed to {len(prompt)} chars")
+        # print(f"Compressed to {len(prompt)} chars")
     # -------------------------------------
 
     prompt = prompt + ", full product shot, straight-on, no crop"
-    print(f"\n\nFinal prompt {len(prompt)} chars \n\n")
+    # print(f"\n\nFinal prompt {len(prompt)} chars \n\n")
     return prompt
 
 # --- 查詢 Product_table.csv ------------------------------------------------
