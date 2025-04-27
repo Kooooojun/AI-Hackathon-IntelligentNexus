@@ -1,63 +1,102 @@
-
-import { 
-  ApiService, 
-  GeneratePayload, 
-  GenerationResult, 
+import {
+  ApiService,
+  GeneratePayload,
   StartGenerationResponse,
   JobStatusResponse,
-  GeneratedImage,
-  FeedbackPayload, 
+  FeedbackPayload,
   FeedbackResponse,
   SaveDesignPayload,
-  SaveDesignResponse
+  SaveDesignResponse,
+  DesignParameters
 } from './types';
 
+const API_BASE = "http://127.0.0.1:8000/api"; // Flask API 的 URL，根據實際情況修改
+
 export class RealApiService implements ApiService {
-  private apiUrl: string;
+  private baseUrl: string;
 
-  constructor(apiUrl: string = 'https://api.example.com') { // Use your actual API URL
-    this.apiUrl = apiUrl;
+  constructor(baseUrl = API_BASE) {
+    this.baseUrl = baseUrl;
   }
-
-  // New method to START generation
+  
+   /* ---------- 產圖 ---------- */
   async startGeneration(payload: GeneratePayload): Promise<StartGenerationResponse> {
-    console.log('Real API - Start Generation:', payload);
-    // Replace '/designs/generate/start' with your actual endpoint to trigger the job
-    const response = await fetch(`${this.apiUrl}/designs/generate/start`, { // Example endpoint
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+    const formData = new FormData();
+    formData.append("style", payload.features.style);
+    formData.append("lighting", payload.features.lighting ? "on" : "off");
+    formData.append("colors", payload.features.color);
+    formData.append("description", payload.description);
+
+    // ✔️ 只有一個 /，而且帶上 generate
+    const response = await fetch(`${this.baseUrl}/generate`, {
+      method: "POST",
+      body: formData
     });
-    if (!response.ok) { throw new Error(`API error: ${response.status}`); }
-    return await response.json(); // Should return { job_id: "..." }
-  }
 
-  // New method to CHECK job status
-  async checkJobStatus(jobId: string): Promise<JobStatusResponse> {
-    console.log('Real API - Check Job Status:', jobId);
-    // Replace '/designs/generate/status/{jobId}' with your actual status endpoint
-    const response = await fetch(`<span class="math-inline">\{this\.apiUrl\}/designs/generate/status/</span>{jobId}`); // Example endpoint
-    if (!response.ok) { throw new Error(`API error: ${response.status}`); }
-    // Backend should return { job_id: "...", status: "...", images?: [...], error?: "..." }
-    const data: JobStatusResponse = await response.json();
-
-    // **Important:** Ensure the backend response for 'succeeded' includes
-    // image objects with 'id', 'url', and 'parameters'.
-    // If the backend only returns URLs, you might need to construct the full
-    // GeneratedImage object here or request parameters separately if needed.
-    // Example check (adapt based on your actual response):
-    if (data.status === 'succeeded' && data.images) {
-        data.images = data.images.map(img => ({
-            ...img,
-            // Ensure 'parameters' are included if your backend provides them,
-            // otherwise, you might need to fetch/reconstruct them.
-            parameters: img.parameters || {} // Placeholder
-        }));
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Failed to start generation: ${text}`);
     }
-    return data;
+
+    const data = await response.json();
+    return {
+      job_id: data.request_id,
+      message: data.message ?? "Generation started"
+    };
   }
 
-  // Keep submitFeedback, saveDesign
-  async submitFeedback(payload: FeedbackPayload): Promise<FeedbackResponse> { /* ... */ }
-  async saveDesign(payload: SaveDesignPayload): Promise<SaveDesignResponse> { /* ... */ }
+  /* ---------- 查狀態 ---------- */
+  async checkJobStatus(jobId: string): Promise<JobStatusResponse> {
+    const response = await fetch(`${this.baseUrl}/generate/${jobId}`);
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Failed to fetch job status: ${text}`);
+    }
+
+    const data = await response.json();
+
+    // 根據你的後端設計來包裝成前端需要的格式
+    if (data.status === "succeeded") {
+      return {
+        job_id: jobId,
+        status: data.status,
+        images: [
+          {
+            id: jobId + "-0",
+            url: data.image_url,
+            job_id: jobId,
+            parameters: undefined,
+            parentId: undefined
+          }
+        ]
+      };
+    }
+
+    return {
+      job_id: jobId,
+      status: data.status,
+      error: data.error
+    };
+  }
+
+  async generateVariants(payload: { reference_image_id: string; base_parameters?: DesignParameters }): Promise<StartGenerationResponse> {
+    // ❗你的後端還沒有這個 endpoint，這裡暫時用 startGeneration 模擬或回傳錯誤
+    throw new Error("Not implemented: /generateVariants");
+  }
+
+  async submitFeedback(payload: FeedbackPayload): Promise<FeedbackResponse> {
+    // ❗尚未定義對應後端 API
+    return {
+      status: "success",
+      message: "Feedback received (stub)"
+    };
+  }
+
+  async saveDesign(payload: SaveDesignPayload): Promise<SaveDesignResponse> {
+    // ❗尚未定義對應後端 API
+    return {
+      status: "success",
+      message: "Design saved (stub)"
+    };
+  }
 }
