@@ -11,6 +11,7 @@ import {
 } from './types';
 
 const API_BASE = "http://127.0.0.1:8000/api"; // Flask API 的 URL，根據實際情況修改
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 export class RealApiService implements ApiService {
   private baseUrl: string;
@@ -85,11 +86,28 @@ export class RealApiService implements ApiService {
   }
 
   async submitFeedback(payload: FeedbackPayload): Promise<FeedbackResponse> {
-    // ❗尚未定義對應後端 API
-    return {
-      status: "success",
-      message: "Feedback received (stub)"
-    };
+    // 1) 把 rating 轉成後端要的整數
+    //    up → 1, down → -1，或依你想要的 1~5 映射
+    const ratingValue = payload.rating === 'up' ? 1 : -1;
+  
+    const response = await fetch(`${this.baseUrl}/feedback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        generation_id: payload.generation_id,
+        image_id: payload.image_id,
+        rating: ratingValue,
+        // comment 之後要加也放這
+      }),
+    });
+  
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Failed to submit feedback: ${text}`);
+    }
+  
+    // 後端回 {"status":"stored"}
+    return await response.json();  // 型別剛好是 FeedbackResponse
   }
 
   async saveDesign(payload: SaveDesignPayload): Promise<SaveDesignResponse> {

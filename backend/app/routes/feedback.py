@@ -28,6 +28,12 @@ bp = Blueprint("feedback", __name__)
 def feedback():
     data = request.get_json()
 
+    # 將 up/down 轉成整數作內部統一
+    rating = data.get("rating")
+    if isinstance(rating, str):
+        rating = 1 if rating == "up" else -1
+    data["rating"] = rating
+
      # 1. 先把 JSON 直接追加到 S3 /metadata/feedback.csv
     append_row_to_csv_on_s3(data)              # ← 新增
 
