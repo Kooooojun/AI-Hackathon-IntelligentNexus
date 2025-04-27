@@ -10,7 +10,10 @@ import {
   DesignParameters
 } from './types';
 
-const API_BASE = "http://127.0.0.1:8000/api"; // Flask API 的 URL，根據實際情況修改
+// const API_BASE = "http://127.0.0.1:8000/api"; // Flask API 的 URL，根據實際情況修改
+const API_BASE = "http://ec2-35-94-193-98.us-west-2.compute.amazonaws.com/api";
+
+
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 export class RealApiService implements ApiService {
