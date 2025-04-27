@@ -6,6 +6,7 @@ import threading
 import time # 用於模擬背景任務狀態更新
 from werkzeug.utils import secure_filename
 import logging # 加入日誌
+import asyncio
 
 # 假設其他模組可以正確導入 (即使內部是 Stub)
 try:

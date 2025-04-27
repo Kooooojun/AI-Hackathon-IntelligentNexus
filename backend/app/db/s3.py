@@ -11,11 +11,13 @@ import boto3
 from botocore.exceptions import ClientError
 from flask import current_app
 
+from typing import Optional, List, Dict, Any # 添加 Optional, List, Dict, Any
+
 
 # --------------------------------------------------------------------------- #
 # 內部工具：取得設定、建立 client
 # --------------------------------------------------------------------------- #
-def _get_cfg(key: str, default: str | None = None) -> str | None:
+def _get_cfg(key: str, default: Optional[str] = None) -> Optional[str]: # <--- 修改返回類型
     """
     先從 Flask app.config 取值；若沒有再回退環境變數。
     """
@@ -52,7 +54,7 @@ def _bucket() -> str:
 # --------------------------------------------------------------------------- #
 # 對外 API
 # --------------------------------------------------------------------------- #
-def check_bucket_exists(bucket: str | None = None) -> bool:
+def check_bucket_exists(bucket: Optional[str] = None) -> bool: # <--- 修改類型
     """
     確認 Bucket 是否存在且憑證有權限。
     """
@@ -65,7 +67,7 @@ def check_bucket_exists(bucket: str | None = None) -> bool:
         raise RuntimeError(f"Bucket '{bucket}' 不存在或權限不足: {e}")
 
 
-def upload_file_to_s3(file_path: str, key: str, bucket: str | None = None):
+def upload_file_to_s3(file_path: str, key: str, bucket: Optional[str] = None): # <--- 修改類型
     """
     上傳本機檔案到 S3。
     """
@@ -75,7 +77,7 @@ def upload_file_to_s3(file_path: str, key: str, bucket: str | None = None):
     return f"s3://{bucket}/{key}"
 
 
-def download_file_from_s3(key: str, download_path: str, bucket: str | None = None):
+def download_file_from_s3(key: str, download_path: str, bucket: Optional[str] = None): # <--- 修改類型
     """
     從 S3 下載到指定本機路徑。
     """
@@ -85,7 +87,7 @@ def download_file_from_s3(key: str, download_path: str, bucket: str | None = Non
     return download_path
 
 
-def generate_presigned_url(key: str, expires_in: int = 3600, bucket: str | None = None) -> str:
+def generate_presigned_url(key: str, expires_in: int = 3600, bucket: Optional[str] = None) -> str: # <--- 修改類型
     """
     產生短效下載連結，預設 1 小時。
     """
@@ -109,7 +111,8 @@ import io
 import pandas as pd
 from datetime import datetime, timezone
 
-def append_row_to_csv_on_s3(data: dict, s3_key: str | None = None):
+def append_row_to_csv_on_s3(data: dict, s3_key: Optional[str] = None):
+
     """
     1. 下載 (或建立空) feedback.csv → 讀成 DataFrame
     2. 把 `data` + timestamp 轉成一列 append

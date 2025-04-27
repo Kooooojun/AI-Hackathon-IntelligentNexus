@@ -147,7 +147,9 @@ from ..db.s3 import _get_cfg             # 從 s3 helper 直接拿
 
 logger = logging.getLogger(__name__)       # 若檔案裡還沒有 logger
 
-def _product_s3_key() -> str | None:
+from typing import Optional, List, Dict, Any # 添加 Optional, List, Dict, Any
+
+def _product_s3_key() -> Optional[str]:
     """
     取 S3 上 Product_table.csv 的 object key
     1. 先看 Flask app.config["PRODUCT_TABLE_S3_KEY"]

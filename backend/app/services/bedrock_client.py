@@ -125,81 +125,69 @@ class BedrockClient:
         except Exception as e:
             logger.error(f"圖像處理失敗: {str(e)}")
             return f"圖像處理錯誤: {str(e)}"
-
-    def titan_image(self, prompt: str, width: int = 768, height: int = 768) -> List[str]:
+    
+    # --- MODIFIED titan_image ---
+    def titan_image(self, prompt: str, width: int = 768, height: int = 768) -> List[bytes]:
         """
-        使用 Bedrock Titan Image 從文字提示生成圖片並上傳 S3
-        回傳 S3 URL list（若 upload_file_to_s3 回傳 presigned URL，這裡也會回傳 presigned）
+        使用 Bedrock Titan Image 從文字提示生成圖片。
+        返回圖片數據的 bytes 列表。由調用者負責上傳和記錄。
         """
         try:
-            MAX_PROMPT_LENGTH = 512
+            MAX_PROMPT_LENGTH = 7000 # Check current limits
             if len(prompt) > MAX_PROMPT_LENGTH:
-                logger.warning(f"[Titan] Prompt 長度超過 {MAX_PROMPT_LENGTH}，已自動截斷。")
+                logger.warning(f"[Titan] Prompt length {len(prompt)} > {MAX_PROMPT_LENGTH}, truncating.")
                 prompt = prompt[:MAX_PROMPT_LENGTH]
 
             payload = {
                 "taskType": "TEXT_IMAGE",
                 "textToImageParams": {"text": prompt},
                 "imageGenerationConfig": {
-                    "numberOfImages": 1,
+                    "numberOfImages": 1, # Generate one image per call for simplicity
+                    "quality": "standard", # or "premium"
                     "height": height,
                     "width": width,
-                    "cfgScale": 8,
-                    "seed": random.randint(0, 999999),  # ✅ 每次隨機
+                    "cfgScale": 8.0,
+                    "seed": random.randint(0, 2147483647), # Use full range for Titan
                 },
             }
+            # Negative prompts can be added here if needed:
+            # "textToImageParams": {"text": prompt, "negativeText": "disfigured, bad quality"},
 
             model_id = "amazon.titan-image-generator-v1"
-            logger.info(f"[Titan] Invoking model: {model_id}")
+            logger.info(f"[Titan] Invoking model: {model_id} with prompt (start): {prompt[:50]}...")
             response = self.client.invoke_model(
                 modelId=model_id,
                 body=json.dumps(payload),
+                accept='application/json',
+                contentType='application/json'
             )
 
-            body = json.loads(response["body"].read().decode("utf-8"))
-            images_b64 = body.get("images", [])
+            response_body = json.loads(response.get('body').read())
+
+            # Check for errors in response
+            if response_body.get('error'):
+                 raise RuntimeError(f"Titan API returned error: {response_body['error']}")
+
+            images_b64 = response_body.get("images")
             if not images_b64:
-                raise RuntimeError("Titan 回傳空 images 陣列")
+                raise RuntimeError("Titan returned empty images array or unexpected format")
 
-            s3_urls: List[str] = []
-            presigned_urls: List[str] = []
-            prefix = os.getenv("IMAGE_OUTPUT_PREFIX", "titan_outputs/")
-            date_tag = datetime.utcnow().strftime("%y%m%d")   # 6 碼日期：240426
-
-            for idx, img_b64 in enumerate(images_b64, start=1):
-                img_bytes = base64.b64decode(img_b64)
-                tmp_dir = tempfile.gettempdir()        # ⚙️ 跨平台安全的暫存目錄
-                tmp_path = os.path.join(tmp_dir, f"{uuid.uuid4()}.png")
-
-                # 1) 寫到 /tmp
-                os.makedirs(os.path.dirname(tmp_path), exist_ok=True)   # ← ★ 保證資料夾存在
-                with open(tmp_path, "wb") as f:
-                    f.write(img_bytes)
-
-                # 2) 上傳到 S3
-                rand_tag = secrets.token_hex(3)               # 6 hex → 3 bytes
-                key = f"{prefix}{date_tag}_{rand_tag}.png"    # e.g. titan_outputs/240426_a1b2c3.png
-                s3_uri = upload_file_to_s3(tmp_path, key)    # 回傳 s3://... 或 presigned URL
-                s3_urls.append(s3_uri)
-
-                # 生成可訪問的 presigned URL 4.26 20:25
-                from app.db.s3 import generate_presigned_url
-                presigned_url = generate_presigned_url(key, expires_in=3600)  # 1 小時有效期    
-                presigned_urls.append(presigned_url)
-                logger.warning(f"\n上傳成功: {presigned_url}")
-
-                # 3) 刪掉暫存檔
+            image_bytes_list: List[bytes] = []
+            for img_b64 in images_b64:
                 try:
-                    os.remove(tmp_path)
-                except OSError:
-                    pass
+                    image_bytes_list.append(base64.b64decode(img_b64))
+                except (TypeError, ValueError) as decode_error:
+                     logger.error(f"Failed to decode base64 image string: {decode_error}")
+                     # Decide how to handle partially successful results
+                     # Maybe continue and return only successfully decoded images?
 
-            return presigned_urls
+            logger.info(f"[Titan] Successfully generated {len(image_bytes_list)} image(s).")
+            return image_bytes_list # Return list of bytes
 
         except Exception as e:
-            logger.error(f"🌩️ Titan 影像生成失敗: {str(e)}", exc_info=True)
-            # 依需求可改拋例外；這裡回 placeholder 方便前端顯示
-            return ["https://placehold.co/768x768.png?text=Titan+Error"]
+            logger.error(f"🌩️ Titan image generation failed: {str(e)}", exc_info=True)
+            raise # Re-raise the exception so the worker knows it failed
+    # --- END MODIFIED titan_image ---
 
     def _get_image_data(self, image_path: str) -> bytes:
         """
