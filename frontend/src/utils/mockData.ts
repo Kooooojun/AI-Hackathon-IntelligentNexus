@@ -4,11 +4,11 @@ import { GenerationResult, FeedbackResponse, GeneratedImage, DesignParameters } 
 
 // Mock image URLs
 const placeholderImages = [
-  "https://images.unsplash.com/photo-1649972904349-6e44c42644a7",
-  "https://images.unsplash.com/photo-1587831990711-23ca6441447b",
-  "https://images.unsplash.com/photo-1555680202-c86f0e12f086",
-  "https://images.unsplash.com/photo-1593640408182-31c70c8268f5",
-  "https://images.unsplash.com/photo-1618384887929-16ec33fab9ef",
+  "https://a.storyblok.com/f/281110/600x600/ea0afeb9de/elite-301-white-overview-600x600.png/m/600x0/smart",
+  "https://a.storyblok.com/f/281110/600x600/627da3e4e0/mb600-overview-600x600.png/m/600x0/smart",
+  "https://a.storyblok.com/f/281110/600x600/afe905824c/masterbox-nr200p-v2-overview-600x600-1.png/m/600x0/smart",
+  "https://a.storyblok.com/f/281110/f379480f5f/td500-mesh-v2-chun-li-380x380-1.png/m/1200x0/smart",
+  "https://a.storyblok.com/f/281110/cb15588e1a/c700m-black-gallery-1.png/m/1920x0/smart",
 ];
 
 // 用來稍微調整 base 參數，產生變體
