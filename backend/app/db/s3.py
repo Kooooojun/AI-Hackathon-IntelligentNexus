@@ -92,7 +92,12 @@ def generate_presigned_url(key: str, expires_in: int = 3600, bucket: str | None 
     bucket = bucket or _bucket()
     return _s3_client().generate_presigned_url(
         ClientMethod="get_object",
-        Params={"Bucket": bucket, "Key": key},
+        Params={
+            "Bucket": bucket, 
+            "Key": key,
+            "ResponseContentType": "image/png",
+            "ResponseContentDisposition": "inline"  # 指示瀏覽器直接顯示而非下載
+            },
         ExpiresIn=expires_in,
     )
 

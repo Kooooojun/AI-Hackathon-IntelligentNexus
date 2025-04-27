@@ -3,3 +3,9 @@ venv/
 __pycache__/
 node_modules/
 .env
+# 忽略所有 .pyc 編譯檔
+*.pyc
+
+# 忽略 pycache 裡其他可能殘留
+*.pyo
+*.pyd
