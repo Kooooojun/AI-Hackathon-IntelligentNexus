@@ -145,7 +145,7 @@
 
 
 
-## 後端重建 (Backend Rebuild)
+## 後端重建 (Backend Rebuild - v2 )
 
 主要目標：
 * 使用grok生成圖片，資料存在supabase + 背景 Worker 模式。
@@ -157,5 +157,99 @@
 * 後端伺服器已可運行。
 * API 文件可在 /apidocs/ 查看。
 
-循序圖(Sequence Diagram)
+## v2 專案目錄：
+```
+.
+├── .gitignore                     # 指定 Git 忽略追蹤的文件和目錄 (例如 .env, node_modules, __pycache__)
+├── README.md                      # 專案說明文件 (如何安裝、啟動、部署等)
+├── docker-compose.yml             # (可選) 使用 Docker Compose 統一部署/開發環境 (後端, Worker, Redis 隊列等)
+│
+├── backend/                       # 後端應用 (例如 Flask 或 FastAPI) - 處理 API 請求、業務邏輯、身份驗證/授權
+│   ├── run.py                     # 啟動後端伺服器的腳本 (例如 `flask run` 或 `uvicorn main:app`)
+│   ├── requirements.txt           # 後端 Python 依賴庫列表
+│   ├── .env.example               # 後端環境變數範本 (Supabase URL/Key, Grok API Key, JWT Secret, Admin Role ID, Redis URL 等)
+│   └── app/                       # Flask/FastAPI 應用程式碼
+│       ├── __init__.py            # 將 app 目錄標記為 Python 包，可包含 Flask app factory
+│       ├── config.py              # 加載和管理應用配置 (從 .env 讀取)
+│       ├── routes/                # API 路由定義
+│       │   ├── __init__.py
+│       │   └── generate.py        # 處理 /api/generate 相關路由 (POST 和 GET /{id})
+│       ├── services/              # 核心業務邏輯
+│       │   ├── __init__.py
+│       │   ├── generation.py      # 處理生成請求的核心邏輯 (調用 Grok Vision/LLM, 觸發 Worker)
+│       │   ├── auth.py            # 處理 JWT 驗證、角色檢查邏輯
+│       │   ├── task.py            # 封裝將任務發送到背景隊列 (Redis/Celery) 的邏輯
+│       │   └── grok.py            # 封裝調用 Grok API (Vision, LLM) 的客戶端邏輯
+│       ├── db/                    # 數據庫和存儲交互 (Supabase)
+│       │   ├── __init__.py
+│       │   └── supabase_client.py # 初始化 Supabase 客戶端，提供 DB 和 Storage 的交互函數
+│       ├── middleware/            # 中間件
+│       │   ├── __init__.py
+│       │   └── auth_middleware.py # 執行 JWT 身份驗證和 Admin 角色授權檢查
+│       ├── models/                # (可選) 定義數據模型/結構 (例如 Pydantic schemas)
+│       └── utils/                 # 通用工具函數 (例如 logger.py)
+│
+├── frontend/                      # 前端應用 (例如 React/Vite) - 用戶界面、狀態管理、與後端 API 交互
+│   ├── public/                    # 靜態資源 (例如 index.html, favicons)
+│   │   └── images/                # 存放 Demo 模式使用的佔位符圖片 (e.g., demo-placeholder.jpg)
+│   ├── src/                       # React 應用源碼
+│   │   ├── components/            # 可重用 UI 元件 (例如 Button, Card, Input)
+│   │   │   └── specific/          # 特定頁面或功能的元件 (e.g., GenerationForm, ImageResultDisplay)
+│   │   │   └── ui/                # 基礎 UI 庫元件 (e.g., from shadcn/ui)
+│   │   │   └── DemoBanner.tsx     # (新增) 用於顯示 "Demo Mode" 的橫幅
+│   │   ├── contexts/              # (或 store/) React Context 或其他狀態管理
+│   │   │   └── AuthContext.tsx    # (新增) 管理用戶認證狀態 (isAuthenticated) 和角色 (isAdmin)
+│   │   ├── hooks/                 # 自定義 React Hooks
+│   │   │   └── useAuth.ts         # (新增) 封裝讀取 AuthContext 狀態的邏輯
+│   │   ├── pages/                 # 頁面級元件
+│   │   │   └── GeneratePage.tsx   # 主要的圖片生成頁面
+│   │   │   └── LoginPage.tsx      # (新增) 用戶登錄頁面
+│   │   ├── services/              # 封裝與外部交互的邏輯
+│   │   │   ├── api.ts             # 調用真實後端 API 的函數
+│   │   │   ├── mockApi.ts         # (新增) 模擬後端 API 行為的函數 (用於 Demo Mode)
+│   │   │   └── supabase.ts        # 初始化 Supabase 前端客戶端 (主要用於 Auth)
+│   │   ├── lib/                   # 通用工具函數 (例如 utils.ts)
+│   │   ├── App.tsx                # 主應用組件，包含路由設置、全局佈局、狀態提供者
+│   │   └── main.tsx               # 應用入口點，渲染 App 元件
+│   ├── index.html                 # Vite 入口 HTML
+│   ├── package.json               # 前端項目依賴和腳本
+│   ├── vite.config.ts             # Vite 配置文件
+│   ├── tailwind.config.js         # Tailwind CSS 配置文件
+│   └── .env.example               # 前端環境變數範本 (VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY)
+│
+├── worker/                        # 背景工作處理器 (例如 Celery 或 RQ) - 執行耗時任務
+│   ├── run_worker.sh              # (或 run.py) 啟動 Worker 進程的腳本
+│   ├── requirements.txt           # Worker Python 依賴庫列表 (Celery/RQ, Supabase client, Grok client)
+│   ├── .env.example               # Worker 環境變數範本 (Supabase URL/Key, Grok API Key, Redis URL)
+│   ├── celery_app.py              # (如果使用 Celery) Celery app 實例化和配置
+│   └── tasks.py                   # 定義背景任務函數
+│       └── generation_task.py     # (例如) 實際執行圖片生成任務的函數:
+│                                  #   1. 接收 request_id, prompt 等參數
+│                                  #   2. 調用 Grok Image Gen API
+│                                  #   3. (可選) 將結果上傳到 Supabase Storage
+│                                  #   4. 更新 Supabase DB 中的請求狀態 (succeeded/failed) 和結果 URL
+│       └── clients/               # (可選) 如果不使用 shared library，可以在此處放客戶端代碼
+│           └── supabase_client.py
+│           └── grok_client.py
+│
+├── shared/                        # (可選但推薦) 後端和 Worker 共用的代碼庫
+│   ├── setup.py / pyproject.toml  # 使其成為可安裝的 Python 包
+│   └── shared_lib/
+│       ├── __init__.py
+│       ├── supabase/              # 共用的 Supabase 客戶端邏輯
+│       │   └── client.py
+│       ├── grok/                  # 共用的 Grok 客戶端邏輯
+│       │   └── client.py
+│       └── models/                # 共用的數據模型 (例如 Pydantic)
+│
+└── scripts/                     # 開發或維護用的輔助腳本
+    ├── setup_admin.py             # (新增) 用於設置 Supabase 用戶角色的腳本
+    ├── load_db.py               # (保留) 可能用於加載初始數據
+    └── cases_data.csv           # (保留) 範例數據
+```
+   
 
+## 循序圖(Sequence Diagram)
+可以查看 [Eraser.io](https://app.eraser.io/workspace/PhcYTxWOFxbesc9uRrLT?origin=share)網頁版進行縮放。
+
+![sequence diagram](data/sequence_diagram.png)
