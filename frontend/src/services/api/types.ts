@@ -1,5 +1,5 @@
 
-export interface GeneratePayload {
+export interface Payload {
   description: string;
   features: {
     style: string;
@@ -20,7 +20,7 @@ export interface StartGenerationResponse {
 export interface JobStatusResponse {
   job_id: string;
   status: 'pending' | 'processing' | 'succeeded' | 'failed';
-  images?: GeneratedImage[]; // Only present when status is 'succeeded'
+  images?: dImage[]; // Only present when status is 'succeeded'
   error?: string;           // Only present when status is 'failed'
   // You might include generation_id here if needed for feedback
   generation_id?: string;
@@ -33,7 +33,7 @@ export interface DesignParameters {
   description: string;
 }
 
-export interface GeneratedImage {
+export interface dImage {
   id: string;
   url: string;
   job_id?: string; // Important for reliable feedback/actions
@@ -45,7 +45,7 @@ export interface GeneratedImage {
 
 export interface GenerationResult {
   generation_id: string;
-  images: GeneratedImage[];
+  images: dImage[];
 }
 
 export interface FeedbackPayload {
@@ -70,9 +70,9 @@ export interface SaveDesignResponse {
 }
 
 export interface ApiService {
-  startGeneration(payload: GeneratePayload): Promise<StartGenerationResponse>;
+  startGeneration(payload: Payload): Promise<StartGenerationResponse>;
   checkJobStatus(jobId: string): Promise<JobStatusResponse>;
-  generateVariants(payload: { reference_image_id: string; base_parameters?: DesignParameters }): Promise<StartGenerationResponse>;
+  Variants(payload: { reference_image_id: string; base_parameters?: DesignParameters }): Promise<StartGenerationResponse>;
   submitFeedback(payload: FeedbackPayload): Promise<FeedbackResponse>;
   saveDesign(payload: SaveDesignPayload): Promise<SaveDesignResponse>;
 }

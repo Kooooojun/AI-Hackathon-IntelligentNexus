@@ -5,7 +5,7 @@ import { useApiService } from '@/services/api/apiServiceFactory'; // VERIFY PATH
 import {
     FeedbackPayload,
     SaveDesignPayload,
-    GeneratedImage,
+    dImage,
     DesignParameters,
     ApiService, // Assuming you have this interface defined
     StartGenerationResponse,
@@ -41,8 +41,8 @@ const placeholderImages = [
 export function MainContent() {
   // --- State ---
   const [isLoading, setIsLoading] = useState(false);
-  const [initialImages, setInitialImages] = useState<GeneratedImage[]>([]);
-  const [variantMap, setVariantMap] = useState<Map<string, GeneratedImage[]>>(new Map());
+  const [initialImages, setInitialImages] = useState<dImage[]>([]);
+  const [variantMap, setVariantMap] = useState<Map<string, dImage[]>>(new Map());
   const [pollingJobId, setPollingJobId] = useState<string | null>(null);
   const [isIntroOpen, setIsIntroOpen] = useState(true);
   const [feedbackGivenMap, setFeedbackGivenMap] = useState<Record<string, boolean>>({});
@@ -72,8 +72,8 @@ export function MainContent() {
               console.log(`Polling response for ${currentJobId}:`, statusResponse?.status);
               if (statusResponse?.status === 'succeeded' && statusResponse?.images) {
                   const eventDetail = { images: statusResponse.images, generation_metadata: { generation_id: currentJobId, parentImageId: parentId } };
-                  stopPolling(); console.log(`DEBUG: Dispatching designGenerated event:`, eventDetail);
-                  window.dispatchEvent(new CustomEvent("designGenerated", { detail: eventDetail }));
+                  stopPolling(); console.log(`DEBUG: Dispatching designd event:`, eventDetail);
+                  window.dispatchEvent(new CustomEvent("designd", { detail: eventDetail }));
               } else if (statusResponse?.status === 'failed') {
                   stopPolling(); setIsLoading(false); toast({ title: "生成失敗", description: statusResponse.error || "任務處理時發生未知錯誤。", variant: "destructive", });
               } else if (statusResponse?.status === 'processing' || statusResponse?.status === 'pending') {
@@ -84,11 +84,11 @@ export function MainContent() {
   }, [stopPolling, apiService, toast, isLoading]);
 
   // --- Action Handlers ---
-  const findImageRecursive = useCallback((imageId: string, currentImages: GeneratedImage[], map: Map<string, GeneratedImage[]>): GeneratedImage | undefined => {
+  const findImageRecursive = useCallback((imageId: string, currentImages: dImage[], map: Map<string, dImage[]>): dImage | undefined => {
       for (const img of currentImages) { if (img.id === imageId) return img; const children = map.get(img.id); if (children) { const foundInChildren = findImageRecursive(imageId, children, map); if (foundInChildren) return foundInChildren; } } return undefined;
   }, []);
 
-  const findImageDetails = useCallback((imageId: string): GeneratedImage | undefined => {
+  const findImageDetails = useCallback((imageId: string): dImage | undefined => {
       console.log(`DEBUG: Searching for image ${imageId}...`); const found = findImageRecursive(imageId, initialImages, variantMap); if (!found) { console.warn(`DEBUG: Image ${imageId} not found.`); } return found;
   }, [initialImages, variantMap, findImageRecursive]);
 
@@ -103,11 +103,11 @@ export function MainContent() {
   // --- handleRefine using MOCK DATA ---
   const handleRefine = useCallback((imageId: string) => {
       const parentImage = findImageDetails(imageId); if (!parentImage) { toast({ title: "操作失敗", description: "找不到父圖片資訊。", variant: "destructive"}); return; } const parentId = parentImage.id; toast({ title: "正在生成模擬變體...", description: `基於 ${parentId.substring(0,6)}...` }); setIsLoading(true);
-      const mockVariants: GeneratedImage[] = []; const numberOfVariants = 2;
+      const mockVariants: dImage[] = []; const numberOfVariants = 2;
       for (let i = 0; i < numberOfVariants; i++) { const mockId = `${parentId}-mockv${Date.now()}-${i}`; const imageUrl = placeholderImages[(initialImages.length + variantMap.size + i) % placeholderImages.length]; mockVariants.push({ id: mockId, url: imageUrl, parentId: parentId, parameters: { style: `variant-style-${i+1}`, color: ['red', 'blue', 'green'][i % 3], lighting: i % 2 === 0, description: `Mock variant ${i+1} of ${parentId.substring(0,6)}` }, job_id: `mockjob-${Date.now()}` }); }
       setTimeout(() => { console.log(`DEBUG: Adding mock variants for parent ${parentId}:`, mockVariants); setVariantMap(prevMap => { const newMap = new Map(prevMap); const existingVariants = newMap.get(parentId) || []; newMap.set(parentId, [...existingVariants, ...mockVariants]); return newMap; }); setIsLoading(false); toast({ title: "模擬變體已添加！"}); }, 1000);
       /* Original API Call Logic
-      try { const response = await apiService.generateVariants({ reference_image_id: imageId, base_parameters: selectedImage.parameters }); if (response && response.job_id) { startPolling(response.job_id, imageId); } else { toast({ title: "啟動變體生成失敗", description: "未收到任務 ID。", variant: "destructive" }); setIsLoading(false); } } catch (error: any) { toast({ title: "啟動變體生成失敗", description: error.message || '無法連接伺服器', variant: "destructive" }); if (!pollingIntervalRef.current) { setIsLoading(false); } }
+      try { const response = await apiService.Variants({ reference_image_id: imageId, base_parameters: selectedImage.parameters }); if (response && response.job_id) { startPolling(response.job_id, imageId); } else { toast({ title: "啟動變體生成失敗", description: "未收到任務 ID。", variant: "destructive" }); setIsLoading(false); } } catch (error: any) { toast({ title: "啟動變體生成失敗", description: error.message || '無法連接伺服器', variant: "destructive" }); if (!pollingIntervalRef.current) { setIsLoading(false); } }
       */
   }, [findImageDetails, toast, setIsLoading, setVariantMap, initialImages.length, variantMap.size]); // Dependencies for mock version
 
@@ -121,15 +121,15 @@ export function MainContent() {
       console.log('DEBUG: handleStartInitialPolling triggered! Event Detail:', event.detail); const { job_id } = event.detail ?? {}; if (job_id) { startPolling(job_id); } else { console.error("handleStartInitialPolling received event without job_id:", event.detail); }
   }, [startPolling]);
 
-  // --- CORRECTED handleDesignGenerated Type Hint ---
-  const handleDesignGenerated = useCallback((event: CustomEvent<{
-      images: GeneratedImage[];
+  // --- CORRECTED handleDesignd Type Hint ---
+  const handleDesignd = useCallback((event: CustomEvent<{
+      images: dImage[];
       generation_metadata: {
           generation_id: string;
           parentImageId?: string | null;
       };
   }>) => {
-      console.log('DEBUG: handleDesignGenerated CALLED. Event detail:', event.detail);
+      console.log('DEBUG: handleDesignd CALLED. Event detail:', event.detail);
       if (!event.detail?.images || !event.detail?.generation_metadata) { setIsLoading(false); toast({ title: "處理結果失敗", description: "收到的數據缺少必要欄位。", variant: "destructive" }); return; }
       const { images, generation_metadata } = event.detail;
       const { generation_id, parentImageId } = generation_metadata;
@@ -141,7 +141,7 @@ export function MainContent() {
           console.log(`DEBUG: Calling setInitialImages with ${processedImages.length} images.`);
           setInitialImages(prev => { const existingIds = new Set(prev.map(img => img.id)); const newImages = processedImages.filter(img => !existingIds.has(img.id)); return newImages.length > 0 ? [...prev, ...newImages] : prev; });
       }
-      console.log('DEBUG: Calling setIsLoading(false) at the end of handleDesignGenerated');
+      console.log('DEBUG: Calling setIsLoading(false) at the end of handleDesignd');
       setIsLoading(false);
   }, [toast, setIsLoading, setInitialImages, setVariantMap]); // Added setters to deps
 
@@ -154,7 +154,7 @@ export function MainContent() {
       let yPos = 0;
       const levelMaxY: Record<number, number> = {};
 
-      const processNode = (image: GeneratedImage, level: number, parentY: number | null) => {
+      const processNode = (image: dImage, level: number, parentY: number | null) => {
           const xPos = level * NODE_WIDTH;
           const calculatedY = parentY === null ? (levelMaxY[level] ?? yPos) : parentY;
           newNodes.push({
@@ -188,15 +188,15 @@ export function MainContent() {
   useEffect(() => {
       console.log("MainContent Effect: Setting up event listeners...");
       const startHandler = handleStartInitialPolling as EventListener;
-      const generatedHandler = handleDesignGenerated as EventListener;
+      const dHandler = handleDesignd as EventListener;
       window.addEventListener("startPollingJob", startHandler);
-      window.addEventListener("designGenerated", generatedHandler);
+      window.addEventListener("designd", dHandler);
       return () => {
           console.log("MainContent Effect Cleanup: Removing listeners...");
           window.removeEventListener("startPollingJob", startHandler);
-          window.removeEventListener("designGenerated", generatedHandler);
+          window.removeEventListener("designd", dHandler);
       };
-  }, [handleStartInitialPolling, handleDesignGenerated]);
+  }, [handleStartInitialPolling, handleDesignd]);
 
   useEffect(() => {
       return () => { console.log("MainContent UNMOUNTING - Stopping polling"); stopPolling(); };

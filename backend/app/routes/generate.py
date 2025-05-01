@@ -1,295 +1,150 @@
-from flask import Blueprint, request, jsonify
-from flasgger.utils import swag_from
+import logging
 import uuid
-import os
-import threading
-import time # 用於模擬背景任務狀態更新
-from werkzeug.utils import secure_filename
-import logging # 加入日誌
+from flask import request, jsonify, current_app
+from werkzeug.exceptions import BadRequest, NotFound, InternalServerError
+from pydantic import ValidationError
+from flasgger import swag_from
 
-# 假設其他模組可以正確導入 (即使內部是 Stub)
-try:
-    # S3 工具函數
-    from ..db.s3 import upload_file_to_s3
-except ImportError:
-    logging.warning("db.s3 not found, using stub for upload_file_to_s3.")
-    # 提供一個 stub 以便程式碼能運行
-    def upload_file_to_s3(file_path, key):
-        print(f"STUB: Would upload {file_path} to S3 as {key}")
-        # 模擬返回一個假的 S3 Key
-        return f"uploads/stub_{key}"
+from app.services import grok_service, task_queue_service
 
-try:
-    # Prompt 引擎服務
-    from ..services.prompt_engine import build_prompt
-except ImportError:
-    logging.warning("services.prompt_engine not found, using stub for build_prompt.")
-    # 提供一個符合新簽名的 stub
-    def build_prompt(style, lighting, colors, description, image_paths=None):
-        print("STUB: Building prompt")
-        img_desc = f"Input images: {image_paths}" if image_paths else ""
-        return f"STUB Prompt: Style={style}, Lighting={lighting}, Colors={colors}, Desc={description}. {img_desc}".strip()
+from app.services.auth_service import admin_required, get_current_user
+from app.services import generation_service
+from app.db import supabase_client
+from app.models.schemas import Response, StatusResponse
 
-try:
-    # 圖像生成觸發器 (背景任務)
-    from ..services.sagemaker_client import trigger_image_generation_task
-except ImportError:
-    logging.warning("services.sagemaker_client not found, using stub for trigger_image_generation_task.")
-    # 模擬背景任務函數，它會更新 job_status_store
-    def mock_background_task(request_id, prompt, input_image_keys=None):
-        global job_status_store # 直接修改全域字典 (僅供範例)
-        logger.info(f"[Thread-{request_id[:6]}] STUB Background task started with prompt: {prompt[:30]}...")
-        time.sleep(1) # 模擬耗時的 AI 生成
-        # 模擬成功並設定假 URL
-        job_status_store[request_id] = {
-            "status": "succeeded",
-            "image_url": f"https://placehold.co/512x512.png?text=Result+for+{request_id[:6]}"
-        }
-        logger.info(f"[Thread-{request_id[:6]}] STUB Background task finished successfully.")
-    trigger_image_generation_task = mock_background_task
+from flask import Blueprint
+
+generate_bp = Blueprint('generate', __name__) 
+
 logger = logging.getLogger(__name__)
-# === Bedrock Titan background worker ========================================
-try:
-    from ..services.bedrock_client import BedrockClient
-    _bedrock = BedrockClient()     # 只建一次 client 共用
 
-    def _titan_worker(request_id: str, prompt: str, *_):
-        """
-        背景執行：呼叫 Titan 產圖 → 更新 job_status_store
-        """
-        logger.info(f"[Thread-{request_id[:6]}] Titan job start")
-        try:
-            urls = _bedrock.titan_image(prompt)       # List[str]
-            if urls and not urls[0].endswith("Titan+Error"):
-                job_status_store[request_id] = {
-                    "status": "succeeded",
-                    "image_url": urls[0]
-                }
-                logger.info(f"[Thread-{request_id[:6]}] Titan job done ✅")
-            else:
-                raise RuntimeError("Titan returned empty or error placeholder")
-        except Exception as e:
-            logger.error(f"[Thread-{request_id[:6]}] Titan job failed: {e}", exc_info=True)
-            job_status_store[request_id] = {
-                "status": "failed",
-                "error": str(e)
-            }
+@generate_bp.route('/generate', methods=['POST'])
+@admin_required # Only admins can 
+@swag_from('../swagger_docs/generate_post.yml')
 
-    # 直接覆蓋掉（或替換 stub 的） trigger_image_generation_task 變數
-    trigger_image_generation_task = _titan_worker
-    logger.info("🔗  Titan generator wired up for /api/generate")
+async def submit_generation():
+    """Submits a new image generation request (Admin Only)."""
+    user = get_current_user()
+    if not user:
+         raise InternalServerError("User context not found after auth check.") # Should not happen
 
-except ImportError:
-    logger.warning("services.bedrock_client not found → 仍使用先前的 stub")
-# ============================================================================
+    # Check content type - expect multipart/form-data
+    if not request.content_type or 'multipart/form-data' not in request.content_type.lower():
+         raise BadRequest("Content-Type must be multipart/form-data")
 
-# --- Logger Setup ---
-logger = logging.getLogger(__name__)
-# --------------------
+    # --- 1. Extract Data ---
+    prompt = request.form.get('prompt')
+    reference_image_file = request.files.get('reference_image')
+    # Convert string flags from form data to boolean
+    analyze_image_flag = request.form.get('analyze_image', 'false').lower() == 'true'
+    optimize_prompt_flag = request.form.get('optimize_prompt', 'false').lower() == 'true'
 
-# --- Blueprint Definition ---
-bp = Blueprint("generate", __name__)
-# --------------------------
+    if not prompt:
+        raise BadRequest("Missing required field: 'prompt'")
 
-# --- 簡易記憶體內狀態儲存 (僅供本地開發測試) ---
-# !!! 警告: 正式部署需改用資料庫或 Redis !!!
-job_status_store = {}
-# --------------------------------------------
+    logger.info(f"Received generation request from admin {user.user_id} with prompt: '{prompt}'")
 
-# --- 檔案上傳配置 ---
-UPLOAD_FOLDER = 'temp_uploads' # 暫存上傳檔案的資料夾
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'webp'}
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
-def allowed_file(filename):
-    """檢查檔案副檔名是否允許"""
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-# --------------------
-
-# --- API Endpoints ---
-@bp.route("/generate", methods=["POST"], strict_slashes=False)
-@bp.route("/generate", methods=["POST"], strict_slashes=False)
-@swag_from({
-    "tags": ["Generate"],
-    "summary": "Submit design task, get request_id (Async)",
-    "description": "Accepts form-data including text prompt parts and optional images. Returns a request ID immediately. Use the GET endpoint to poll for results.",
-    "consumes": ["multipart/form-data"],
-    "parameters": [
-        {"name": "style", "in": "formData", "type": "string", "required": True, "description": "Design style (e.g., Cyberpunk)"},
-        {"name": "lighting", "in": "formData", "type": "string", "required": True, "description": "Lighting effect (e.g., RGB_neon)"},
-        {"name": "colors", "in": "formData", "type": "string", "required": True, "description": "Comma-separated HEX colors (e.g., #6A0DAD,#1B9AAA)"},
-        {"name": "description", "in": "formData", "type": "string", "required": True, "description": "Free text description"},
-        {"name": "images", "in": "formData", "type": "file", "required": False, "description": "Reference images (max 3)"}
-    ],
-    "responses": {
-        200: {
-            "description": "Task successfully submitted",
-            "schema": {
-                "type": "object",
-                "properties": {
-                    "status": {"type": "string", "example": "succeeded"},
-                    "request_id": {"type": "string", "example": "uuid-abcd-1234"},
-                    "prompt": {"type": "string", "example": "Generated prompt used for the task"},
-                    "img_url": {"type": "string", "example": "https://flask-bucket-nexus.s3.amazonaws.com"}
-                }
-            }
-        },
-        400: {"description": "Bad Request (e.g., missing fields, invalid file type, too many files)"},
-        500: {"description": "Internal Server Error (e.g., file upload failed or background task error)"}
-    }
-})
-def submit_generation_task():
-    """
-    處理新的圖像生成任務提交。
-    接收 Form Data 和可選的圖片，觸發背景任務，並立即返回 request ID。
-    """
-    request_start_time = time.time()
-    logger.info("Received POST /api/generate request")
-    try:
-        # 1. 獲取表單欄位數據
-        style = request.form.get('style')
-        lighting = request.form.get('lighting')
-        colors_str = request.form.get('colors')
-        description = request.form.get('description')
-        logger.debug(f"Form data - style: {style}, lighting: {lighting}, colors: {colors_str}, desc: {description[:50]}...")
-
-        required_fields = {'style': style, 'lighting': lighting, 'colors': colors_str, 'description': description}
-        if not all(required_fields.values()):
-            missing = [k for k, v in required_fields.items() if not v]
-            logger.warning(f"Missing required form fields: {missing}")
-            return jsonify({"error": f"Missing required form fields: {', '.join(missing)}"}), 400
-
-        # 2. 處理檔案上傳
-        uploaded_image_keys = [] # 儲存 S3 Keys
-        if 'images' in request.files:
-            files = request.files.getlist('images')
-            logger.info(f"Received {len(files)} file(s) in 'images' field.")
-            if len(files) > 3:
-                 logger.warning("Too many files uploaded.")
-                 return jsonify({"error": "Maximum 3 reference images allowed."}), 400
-
-            for file in files:
-                # 檢查是否有檔案且檔名不為空
-                if file and file.filename:
-                    if allowed_file(file.filename):
-                        filename = secure_filename(file.filename)
-                        # 暫存檔案到本地 (生產環境不建議)
-                        temp_path = os.path.join(UPLOAD_FOLDER, f"{uuid.uuid4()}_{filename}")
-                        s3_key_prefix = "uploads" # 上傳到 S3 的 uploads 資料夾
-                        s3_object_name = f"{s3_key_prefix}/{uuid.uuid4()}_{filename}" # 使用 UUID 確保 S3 key 唯一性
-                        try:
-                            logger.debug(f"Saving temporary file to {temp_path}")
-                            file.save(temp_path)
-
-                            # ===============================================
-                            # == 調用 S3 上傳服務 (可以保持 Stub 或實現) ==
-                            logger.debug(f"Calling upload_file_to_s3 for {temp_path} as {s3_object_name}")
-                            s3_key_or_url = upload_file_to_s3(temp_path, s3_object_name)
-                            # ===============================================
-
-                            if s3_key_or_url: # 假設返回 S3 Key 或 URL
-                                uploaded_image_keys.append(s3_key_or_url) # 記錄 S3 Key 或 URL
-                                logger.info(f"Successfully processed file {filename}, S3 ref: {s3_key_or_url}")
-                            else:
-                                raise Exception(f"S3 upload function returned None for {filename}")
-                        except Exception as e:
-                            logger.error(f"Error processing/uploading file {filename}: {e}", exc_info=True)
-                            # 清理暫存檔案
-                            if os.path.exists(temp_path):
-                                os.remove(temp_path)
-                            return jsonify({"error": f"Failed to process or upload file {filename}"}), 500
-                        finally:
-                            # 確保刪除暫存檔案
-                            if os.path.exists(temp_path):
-                                 logger.debug(f"Removing temporary file {temp_path}")
-                                 os.remove(temp_path)
-                    else:
-                        logger.warning(f"File type not allowed: {file.filename}")
-                        return jsonify({"error": f"File type not allowed for {file.filename}. Allowed: {ALLOWED_EXTENSIONS}"}), 400
-                # else: # 如果 file.filename 是空的，通常是空的文件欄位，可以忽略
-                #    logger.debug("Empty file field detected.")
-
-        # 3. 組合 Prompt (調用服務層 - 使用新的 prompt_engine.py)
-        colors_list = colors_str.split(',') if colors_str else []
-        logger.debug("Calling build_prompt service...")
-        prompt = build_prompt(
-            style=style,
-            lighting=lighting,
-            colors=colors_list,
-            description=description,
-            image_paths=uploaded_image_keys # 傳遞 S3 Keys/URLs 給 prompt 引擎
+    # --- 2. Handle Reference Image (Optional) ---
+    reference_image_path = None
+    reference_image_url = None # Needed if analyze_image is true
+    if reference_image_file:
+        logger.info(f"Processing reference image: {reference_image_file.filename}")
+        reference_image_path = await supabase_client.upload_reference_image(
+            reference_image_file, user.user_id, str(uuid.uuid4()) #  temporary ID for path if needed before request_id
         )
-        logger.info(f"Generated prompt: {prompt[:100]}...") # 只記錄部分 prompt
+        if not reference_image_path:
+            logger.error("Failed to upload reference image.")
+            # Decide if this is a fatal error or just proceed without ref image
+            # raise InternalServerError("Failed to upload reference image.")
+        else:
+             # Get public URL if needed for analysis
+             try:
+                 # Construct the URL based on bucket and path - adjust as per your Supabase setup
+                 bucket_name = "reference-images" # Example bucket
+                 reference_image_url = f"{current_app.config['SUPABASE_URL']}/storage/v1/object/public/{bucket_name}/{reference_image_path}"
+                 logger.info(f"Reference image uploaded to path: {reference_image_path}, URL: {reference_image_url}")
+             except Exception as url_err:
+                 logger.error(f"Could not construct public URL for {reference_image_path}: {url_err}")
+                 # Proceed without analysis if URL fails?
+                 analyze_image_flag = False
 
-        # 4. 產生 Request ID 並記錄初始狀態
-        request_id = str(uuid.uuid4())
-        job_status_store[request_id] = {"status": "processing"} # 初始化狀態
-        logger.info(f"Task {request_id} created. Initial status: processing")
 
-        # 5. 觸發背景任務 (調用服務層 - 使用 stub 或 threading)
-        logger.debug(f"Starting background thread for trigger_image_generation_task (request_id: {request_id})")
-        thread = threading.Thread(target=trigger_image_generation_task,
-                                  args=(request_id, prompt, uploaded_image_keys))
-        thread.daemon = True
-        thread.start()
-        logger.info(f"Background task for {request_id} dispatched.")
+    # --- 3. Image Analysis / Prompt Optimization (Optional) ---
+    final_prompt = prompt
+    if reference_image_url and analyze_image_flag:
+        logger.info("Analyzing reference image...")
+        image_description = await grok_service.analyze_image_with_grok(reference_image_url)
+        if image_description:
+            # Combine description with original prompt (strategy depends on desired behavior)
+            final_prompt = f"{prompt} (based on reference image: {image_description})" # Example combination
+            logger.info(f"Prompt updated with image analysis: '{final_prompt}'")
+        else:
+            logger.warning("Image analysis failed or returned no description.")
 
-        # 6. 立即回傳成功提交的回應
-        response_data = {
-            "status": "succeeded", # 指 API 請求成功提交
-            "request_id": request_id,
-            "prompt": prompt,
-            "img_url": "等前端用 GET /api/generate/<id> 輪詢時再取得真正的 URL" 
-            # 返回上傳的圖片 URL** 此時圖片還在背景執行， 根本拿不到 URL
-        }
-        logger.info(f"Responding to POST /api/generate for {request_id} with: {response_data}")
-        total_time = time.time() - request_start_time
-        logger.info(f"POST /api/generate request for {request_id} processed in {total_time:.4f} seconds.")
-        return jsonify(response_data), 200
+    if optimize_prompt_flag:
+        logger.info("Optimizing prompt...")
+        optimized_prompt = await grok_service.optimize_prompt_with_grok(final_prompt) # Optimize potentially combined prompt
+        if optimized_prompt:
+            final_prompt = optimized_prompt
+            logger.info(f"Prompt optimized: '{final_prompt}'")
+        else:
+            logger.warning("Prompt optimization failed or returned no result.")
 
+
+    # --- 4. Store Initial Request State & Trigger Worker ---
+    request_id = str(uuid.uuid4())
+    stored = await supabase_client.store_generation_request(
+        request_id=request_id,
+        user_id=user.user_id,
+        prompt=final_prompt, # Store the final prompt used
+        status='processing',
+        ref_image_path=reference_image_path
+        # Store original_prompt, analyzed_description etc. if needed
+    )
+
+    if not stored:
+        raise InternalServerError("Failed to store initial request state.")
+
+    task_sent = task_queue_service.send_generation_task(
+        request_id=request_id,
+        user_id=user.user_id,
+        final_prompt=final_prompt,
+        reference_image_path=reference_image_path
+    )
+
+    if not task_sent:
+        # Consider trying to update status to 'failed' here
+        raise InternalServerError("Failed to send generation task to worker queue.")
+
+    # --- 5. Return Request ID ---
+    logger.info(f"Successfully submitted generation request {request_id}")
+    response_data = Response(request_id=request_id)
+    return jsonify(response_data.dict()), 202 # 202 Accepted
+
+
+@generate_bp.route('/<string:request_id>', methods=['GET'])
+@admin_required # Only admins can check status (consistent with POST)
+@swag_from('../swagger_docs/generate_get_status.yml') #
+async def get_status(request_id):
+    """Gets the status of a specific generation request (Admin Only)."""
+    user = get_status() # For logging/auditing if needed
+    if not user:
+         raise InternalServerError("User context not found after auth check.")
+
+    logger.info(f"Admin {user.user_id} checking status for request_id: {request_id}")
+
+    status_data = await supabase_client.get_generation_status(request_id)
+
+    if status_data is None:
+        raise NotFound(f"Request ID '{request_id}' not found.")
+
+    try:
+        # Validate the data structure before returning
+        response_model = StatusResponse(**status_data)
+        return jsonify(response_model.dict()), 200
+    except ValidationError as e:
+        logger.error(f"Data validation error for status response {request_id}: {e}")
+        raise InternalServerError("Invalid status data format retrieved.")
     except Exception as e:
-        # 通用錯誤處理
-        logger.error(f"Unhandled error in POST /api/generate: {str(e)}", exc_info=True)
-        total_time = time.time() - request_start_time
-        logger.info(f"POST /api/generate request failed after {total_time:.4f} seconds.")
-        return jsonify({"error": "An internal server error occurred."}), 500
-
-
-@bp.route("/generate/<string:request_id>", methods=["GET"])
-@swag_from({
-    "tags": ["Generate"],
-    "summary": "Check generation status and get result URL",
-    "description": "Poll this endpoint with the request_id obtained from the POST /api/generate request.",
-    "parameters": [
-        {"name": "request_id", "in": "path", "type": "string", "required": True, "description": "The request ID"}
-    ],
-    "responses": {
-        200: {
-            "description": "Current status or final result",
-            "schema": {
-                "type": "object",
-                "properties": {
-                    "status": {"type": "string", "enum": ["processing", "succeeded", "failed"], "description": "Current status of the generation task"},
-                    "image_url": {"type": "string", "description": "URL of the generated image (only if status is 'succeeded')"},
-                    "error": {"type": "string", "description": "Error message (only if status is 'failed')"}
-                }
-            }
-        },
-        404: {"description": "Request ID not found"}
-    }
-})
-def get_generation_status(request_id):
-    """
-    檢查先前提交的生成任務狀態。
-    返回當前狀態，如果成功完成則包含結果 URL。
-    """
-    logger.info(f"Received GET /api/generate/{request_id} request")
-    job_info = job_status_store.get(request_id) # 從模擬儲存中獲取狀態
-
-    if not job_info:
-        logger.warning(f"Request ID not found: {request_id}")
-        return jsonify({"error": "Request ID not found"}), 404
-
-    logger.info(f"Returning status for {request_id}: {job_info}")
-    return jsonify(job_info), 200
+        logger.error(f"Unexpected error forming status response for {request_id}: {e}", exc_info=True)
+        raise InternalServerError("Failed to process status response.")

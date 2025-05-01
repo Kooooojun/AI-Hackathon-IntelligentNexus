@@ -1,6 +1,6 @@
 // src/utils/mockData.ts
 import { v4 as uuidv4 } from 'uuid';
-import { GenerationResult, FeedbackResponse, GeneratedImage, DesignParameters } from '@/services/api/types'; 
+import { GenerationResult, FeedbackResponse, dImage, DesignParameters } from '@/services/api/types'; 
 
 // Mock image URLs
 const placeholderImages = [

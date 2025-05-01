@@ -3,23 +3,23 @@
 import { v4 as uuidv4 } from 'uuid';
 import {
   ApiService,
-  GeneratePayload,
+  Payload,
   FeedbackPayload,
   FeedbackResponse,
   SaveDesignPayload,
   SaveDesignResponse,
   StartGenerationResponse,
   JobStatusResponse,
-  GeneratedImage,
+  dImage,
   DesignParameters // 確保導入 DesignParameters
 } from './types';
-import { generateMockDesignData, generateMockFeedbackResponse } from '@/utils/mockData'; // VERIFY PATH
+import { MockDesignData, MockFeedbackResponse } from '@/utils/mockData'; // VERIFY PATH
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 interface MockJobState {
   status: 'pending' | 'processing' | 'succeeded' | 'failed';
-  images?: GeneratedImage[];
+  images?: dImage[];
   error?: string;
   originalImageId?: string; // reference image id if variation
   parameters?: DesignParameters; // features (使用 DesignParameters 類型)
@@ -28,7 +28,7 @@ interface MockJobState {
 export class MockApiService implements ApiService {
   private jobStore: Map<string, MockJobState> = new Map();
 
-  async startGeneration(payload: GeneratePayload): Promise<StartGenerationResponse> {
+  async startGeneration(payload: Payload): Promise<StartGenerationResponse> {
     console.log('Mock API - Start Generation:', payload);
     await delay(100);
     const jobId = uuidv4();
@@ -46,8 +46,8 @@ export class MockApiService implements ApiService {
     return { job_id: jobId, message: "Generation started" };
   }
 
-  async generateVariants(payload: { reference_image_id: string; base_parameters?: DesignParameters }): Promise<StartGenerationResponse> {
-    console.log('Mock API - Start Variant Generation (using generateVariants method):', payload);
+  async Variants(payload: { reference_image_id: string; base_parameters?: DesignParameters }): Promise<StartGenerationResponse> {
+    console.log('Mock API - Start Variant Generation (using Variants method):', payload);
     await delay(100); // 模擬網絡延遲
 
     const jobId = uuidv4();
@@ -120,7 +120,7 @@ export class MockApiService implements ApiService {
           const isVariation = !!currentJobInfo.originalImageId;
 
           // 使用 mockData 中的工具生成數據
-          const mockResult = generateMockDesignData(
+          const mockResult = MockDesignData(
             2, // 每次生成 2 張圖
             currentJobInfo.parameters, // 使用存儲的參數
             currentJobInfo.originalImageId // 傳遞 parentId (如果存在)
@@ -142,7 +142,7 @@ export class MockApiService implements ApiService {
   async submitFeedback(payload: FeedbackPayload): Promise<FeedbackResponse> {
     console.log('Mock API - Submit Feedback:', payload);
     await delay(500);
-    return generateMockFeedbackResponse();
+    return MockFeedbackResponse();
   }
 
   async saveDesign(payload: SaveDesignPayload): Promise<SaveDesignResponse> {

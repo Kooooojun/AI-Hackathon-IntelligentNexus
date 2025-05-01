@@ -1,0 +1,71 @@
+tags:
+  - Generation
+summary: Submit a new image generation request (Admin Only)
+description: |
+  Accepts form data including a prompt and optional parameters/image.
+  Initiates a background generation task and returns a request ID.
+  Requires admin authentication.
+consumes:
+  - multipart/form-data
+parameters:
+  - name: prompt
+    in: formData
+    type: string
+    required: true
+    description: Text prompt for image generation.
+  - name: reference_image
+    in: formData
+    type: file
+    required: false
+    description: Optional reference image file.
+  - name: analyze_image
+    in: formData
+    type: boolean
+    required: false
+    default: false
+    description: Flag to analyze the reference image using Vision API.
+  - name: optimize_prompt
+    in: formData
+    type: boolean
+    required: false
+    default: false
+    description: Flag to optimize the prompt using LLM API.
+  # Add other form parameters if needed
+security:
+  - bearerAuth: [] # Indicates this endpoint requires Bearer token auth
+responses:
+  202:
+    description: Request accepted, background processing started.
+    schema:
+      type: object
+      properties:
+        request_id:
+          type: string
+          description: Unique ID for the generation request.
+          example: 'unique-request-id-123'
+  400:
+    description: Bad Request (e.g., missing prompt).
+    schema:
+      $ref: '#/definitions/ErrorResponse' # Reference a common error schema (see below)
+  401:
+    description: Unauthorized (Invalid or missing JWT token).
+    schema:
+      $ref: '#/definitions/ErrorResponse'
+  403:
+    description: Forbidden (User is not an admin).
+    schema:
+      $ref: '#/definitions/ErrorResponse'
+  500:
+    description: Internal Server Error.
+    schema:
+      $ref: '#/definitions/ErrorResponse'
+
+# Optional: Define common response schemas globally in Flasgger config or reuse here
+definitions:
+  ErrorResponse:
+    type: object
+    properties:
+      error:
+        type: string
+        description: Description of the error.
+        example: 'Administrator access required.'

@@ -1,6 +1,6 @@
 // src/components/design/ImageNode.tsx
 import React, { useState, useCallback, useRef, useLayoutEffect } from 'react'; // Import useRef, useLayoutEffect
-import { FeedbackPayload, SaveDesignPayload, GeneratedImage, DesignParameters, ApiService, StartGenerationResponse, JobStatusResponse, FeedbackResponse, SaveDesignResponse } from '@/services/api/types'; // VERIFY PATH & Types
+import { FeedbackPayload, SaveDesignPayload, dImage, DesignParameters, ApiService, StartGenerationResponse, JobStatusResponse, FeedbackResponse, SaveDesignResponse } from '@/services/api/types'; // VERIFY PATH & Types
 import { DesignCard } from './DesignCard'; // VERIFY PATH
 import { Button } from "@/components/ui/button"; // VERIFY PATH
 import { Layers, GitBranch, ChevronDown, ChevronUp } from "lucide-react";
@@ -16,8 +16,8 @@ const NODE_WIDTH = 256 + 30; // Card width (e.g., 256px from DesignNode) + horiz
 const NODE_HEIGHT = 350 + 40; // Estimated Card height + vertical spacing
 
 interface ImageNodeProps {
-  image: GeneratedImage;
-  variantMap: Map<string, GeneratedImage[]>;
+  image: dImage;
+  variantMap: Map<string, dImage[]>;
   level: number;
   feedbackGivenMap: Record<string, boolean>;
   savedImageMap: Record<string, boolean>;

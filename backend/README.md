@@ -74,11 +74,11 @@ backend/
  │   ├── config.py          # 設定讀取（.env）
  │
  │   ├── routes/
- │   │   ├── generate.py    # /api/generate endpoint    # 前端(下prompt的部分)
+ │   │   ├── generate.py    # /api/ endpoint    # 前端(下prompt的部分)
  │   │   └── feedback.py    # /api/feedback endpoint    # 前端(user 回饋)
  │
  │   ├── services/
- │   │   ├── prompt_engine.py     # Prompt 組合邏輯     # 拉 generate.py 的 prompt 去組合成一段text
+ │   │   ├── prompt_engine.py     # Prompt 組合邏輯     # 拉 .py 的 prompt 去組合成一段text
  │   │   ├── sagemaker_client.py  # 模型呼叫（SageMaker or Bedrock）
  │   │   └── bedrock_client.py    # Bedrock（Titan Image stub） # 生成圖片後 要接回前端 如果approve -> 接 s3.py 存圖片
  │

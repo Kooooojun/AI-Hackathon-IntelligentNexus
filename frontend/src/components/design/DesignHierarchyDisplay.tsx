@@ -1,13 +1,13 @@
 // src/components/design/DesignHierarchyDisplay.tsx
 import React from 'react';
-import { GeneratedImage } from '@/services/api/types'; // VERIFY PATH
+import { dImage } from '@/services/api/types'; // VERIFY PATH
 import { ImageNode } from './ImageNode'; // VERIFY PATH
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"; // VERIFY PATH
 
 interface DesignHierarchyDisplayProps {
   isLoading: boolean;
-  initialImages: GeneratedImage[];
-  variantMap: Map<string, GeneratedImage[]>;
+  initialImages: dImage[];
+  variantMap: Map<string, dImage[]>;
   feedbackGivenMap: Record<string, boolean>;
   savedImageMap: Record<string, boolean>;
   onFeedback: (imageId: string, isPositive: boolean) => void;
