@@ -37,7 +37,7 @@ def get_image_signed_url(imageId: str):
         description: Bearer token for authentication (e.g., 'Bearer your_token').
     responses:
       '200': # 狀態碼加引號
-        description: Signed URL generated successfully.
+        description: Signed URL d successfully.
         content: # 使用 content 和 application/json
           application/json:
             schema: # <--- 這裡直接定義 Schema，而不是用 $ref --->
@@ -61,7 +61,9 @@ def get_image_signed_url(imageId: str):
             schema:
               type: object
               properties:
-                message: { type: string, example: Authentication Token is missing! }
+                message: # 修改這裡的縮排和結構
+                  type: string
+                  example: "Authentication Token is missing!" # example 值用引號括起來
       '403':
         description: Forbidden, user cannot access this image.
         content:
@@ -69,7 +71,9 @@ def get_image_signed_url(imageId: str):
             schema:
               type: object
               properties:
-                message: { type: string, example: Forbidden: Cannot access this image. }
+                message: # 修改這裡的縮排和結構
+                  type: string
+                  example: "Forbidden: Cannot access this image." # example 值用引號括起來
       '404':
         description: Image ID not found.
         content:

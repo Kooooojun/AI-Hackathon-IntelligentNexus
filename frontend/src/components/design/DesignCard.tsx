@@ -9,10 +9,10 @@ import {
   TooltipTrigger,
 } from "../ui/tooltip"; // VERIFY PATH
 import { Card, CardContent } from "../ui/card"; // VERIFY PATH
-import { GeneratedImage } from '@/services/api/types'; // VERIFY PATH
+import { dImage } from '@/services/api/types'; // VERIFY PATH
 
 interface DesignCardProps {
-  image: GeneratedImage;
+  image: dImage;
   feedbackGiven: boolean;
   isSaved: boolean;
   onFeedback: (imageId: string, isPositive: boolean) => void;
@@ -38,7 +38,7 @@ export function DesignCard({
           <div className="relative w-full aspect-square bg-muted/30 overflow-hidden"> {/* Fixed aspect ratio */}
             <img
               src={image.url}
-              alt={`Generated design ${image.id.substring(0, 6)}`}
+              alt={`d design ${image.id.substring(0, 6)}`}
               // --- 使用 object-contain 避免擠壓 ---
               className="w-full h-full object-contain"
               // ------------------------------------

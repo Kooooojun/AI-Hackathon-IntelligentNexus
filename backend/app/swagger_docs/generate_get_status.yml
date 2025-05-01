@@ -1,0 +1,58 @@
+tags:
+  - Generation
+summary: Get the status of a generation request (Admin Only)
+description: Polls the status using the request ID obtained from POST /. Requires admin authentication.
+parameters:
+  - name: request_id
+    in: path
+    type: string
+    required: true
+    description: The unique ID of the generation request.
+security:
+  - bearerAuth: []
+responses:
+  200:
+    description: Successfully retrieved status.
+    schema:
+      type: object
+      properties:
+        request_id:
+          type: string
+          example: 'unique-request-id-123'
+        status:
+          type: string
+          enum: [processing, succeeded, failed]
+          example: 'processing'
+        result_url:
+          type: string
+          format: url
+          description: URL of the d image (only if status is 'succeeded').
+          example: 'https://your-supabase-storage-url.com/path/to/d_image.png'
+        error_message:
+          type: string
+          description: Error details (only if status is 'failed').
+          example: 'Image generation timed out.'
+  401:
+    description: Unauthorized.
+    schema:
+      $ref: '#/definitions/ErrorResponse'
+  403:
+    description: Forbidden.
+    schema:
+      $ref: '#/definitions/ErrorResponse'
+  404:
+    description: Request ID not found.
+    schema:
+      $ref: '#/definitions/ErrorResponse'
+  500:
+    description: Internal Server Error.
+    schema:
+      $ref: '#/definitions/ErrorResponse'
+
+definitions:
+  ErrorResponse:
+    type: object
+    properties:
+      error:
+        type: string
+        example: 'Request ID not found.'

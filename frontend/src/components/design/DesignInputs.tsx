@@ -8,7 +8,7 @@ import { RadioGroup, RadioGroupItem } from "../ui/radio-group";
 import { Label } from "../ui/label";
 import { Button } from "../ui/button";
 import { useApiService } from '@/services/api/apiServiceFactory';
-import { GeneratePayload } from '@/services/api/types';
+import { Payload } from '@/services/api/types';
 
 export function DesignInputs() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -91,7 +91,7 @@ export function DesignInputs() {
     setDescription(newText);
   };
 
-  const sendGenerateRequest = async (payload: GeneratePayload) => {
+  const sendRequest = async (payload: Payload) => {
     try {
       // Call the function to START the generation job
       const startResponse = await apiService.startGeneration(payload); // Returns { job_id: ... }
@@ -145,7 +145,7 @@ export function DesignInputs() {
       });
       // Ensure loading state is reset if start fails
       setIsGenerating(false); // Reset loading specifically on error here
-      // Re-throw the error if you want handleGenerate to catch it too, otherwise remove throw
+      // Re-throw the error if you want handle to catch it too, otherwise remove throw
       // throw error;
     } finally {
       // setIsGenerating should be managed by MainContent based on polling status,
@@ -156,7 +156,7 @@ export function DesignInputs() {
     }
   };
 
-  const handleGenerate = async () => {
+  const handle = async () => {
   // 檢查必要欄位（可以加上判斷，不然就有預設值）
   if (!description.trim()) {
     toast({ title: "請填寫設計描述", variant: "destructive" });
@@ -167,7 +167,7 @@ export function DesignInputs() {
     return;
   }
 
-  const payload: GeneratePayload = {
+  const payload: Payload = {
     description: description,
     features: {
       style,
@@ -187,7 +187,7 @@ export function DesignInputs() {
       reader.onloadend = async () => {
         const base64String = reader.result as string;
         payload.base64_image = base64String.split(',')[1];
-        await sendGenerateRequest(payload);
+        await sendRequest(payload);
       };
       reader.onerror = () => {
         setIsGenerating(false);
@@ -196,12 +196,12 @@ export function DesignInputs() {
       reader.readAsDataURL(selectedFile);
     } else if (imagePreview && imagePreview.startsWith('data:')) {
       payload.base64_image = imagePreview.split(',')[1];
-      await sendGenerateRequest(payload);
+      await sendRequest(payload);
     } else {
-      await sendGenerateRequest(payload);
+      await sendRequest(payload);
     }
   } catch (error) {
-    console.error("Error during handleGenerate flow:", error);
+    console.error("Error during handle flow:", error);
     setIsGenerating(false);
   }
 };
@@ -316,7 +316,7 @@ export function DesignInputs() {
       <Button 
         className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
         size="lg"
-        onClick={handleGenerate}
+        onClick={handle}
         disabled={isGenerating}
       >
         {isGenerating ? '⏳ 生成中...' : '✨ 生成設計概念圖'}

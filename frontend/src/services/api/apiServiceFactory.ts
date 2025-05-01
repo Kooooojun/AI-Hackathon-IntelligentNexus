@@ -4,11 +4,11 @@ import { MockApiService } from './mockApiService'; // 取消註解
 import { RealApiService } from './realApiService';
 
 //使用Real API 時改成false
-const useMockApi = "true"
+const useMockApi = "false"
 
 
-// 真實 API 的 URL (建議從環境變數讀取)
-const apiUrl = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api'; // 優先使用環境變數
+// 真實 API 的 URL 
+const apiUrl = 'http://127.0.0.1:8000';
 
 export const getApiService = (): ApiService => {
   if (useMockApi) {

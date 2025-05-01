@@ -1,12 +1,12 @@
 // src/components/design/DesignNode.tsx
 import React, { memo } from 'react';
 import { Handle, Position, NodeProps } from 'reactflow';
-import { GeneratedImage } from '@/services/api/types';
+import { dImage } from '@/services/api/types';
 import { DesignCard } from './DesignCard'; // Import your DesignCard
 
 // Define the structure of the data passed to the node
 export interface DesignNodeData {
-  image: GeneratedImage;
+  image: dImage;
   feedbackGivenMap: Record<string, boolean>;
   savedImageMap: Record<string, boolean>;
   onFeedback: (imageId: string, isPositive: boolean) => void;

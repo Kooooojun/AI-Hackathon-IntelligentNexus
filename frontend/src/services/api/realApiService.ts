@@ -1,6 +1,6 @@
 import {
   ApiService,
-  GeneratePayload,
+  Payload,
   StartGenerationResponse,
   JobStatusResponse,
   FeedbackPayload,
@@ -10,7 +10,7 @@ import {
   DesignParameters
 } from './types';
 
-const API_BASE = "http://127.0.0.1:8000/api"; // Flask API 的 URL，根據實際情況修改
+const API_BASE = "http://127.0.0.1:8000"; // Flask API 的 URL，根據實際情況修改
 // const API_BASE = "http://ec2-35-94-193-98.us-west-2.compute.amazonaws.com/api";
 
 
@@ -24,15 +24,15 @@ export class RealApiService implements ApiService {
   }
   
    /* ---------- 產圖 ---------- */
-  async startGeneration(payload: GeneratePayload): Promise<StartGenerationResponse> {
+  async startGeneration(payload: Payload): Promise<StartGenerationResponse> {
     const formData = new FormData();
     formData.append("style", payload.features.style);
     formData.append("lighting", payload.features.lighting ? "on" : "off");
     formData.append("colors", payload.features.color);
     formData.append("description", payload.description);
 
-    // ✔️ 只有一個 /，而且帶上 generate
-    const response = await fetch(`${this.baseUrl}/generate`, {
+    // ✔️ 只有一個 /，而且帶上 
+    const response = await fetch(`${this.baseUrl}/`, {
       method: "POST",
       body: formData
     });
@@ -51,7 +51,7 @@ export class RealApiService implements ApiService {
 
   /* ---------- 查狀態 ---------- */
   async checkJobStatus(jobId: string): Promise<JobStatusResponse> {
-    const response = await fetch(`${this.baseUrl}/generate/${jobId}`);
+    const response = await fetch(`${this.baseUrl}//${jobId}`);
     if (!response.ok) {
       const text = await response.text();
       throw new Error(`Failed to fetch job status: ${text}`);
@@ -83,9 +83,9 @@ export class RealApiService implements ApiService {
     };
   }
 
-  async generateVariants(payload: { reference_image_id: string; base_parameters?: DesignParameters }): Promise<StartGenerationResponse> {
+  async Variants(payload: { reference_image_id: string; base_parameters?: DesignParameters }): Promise<StartGenerationResponse> {
     // ❗你的後端還沒有這個 endpoint，這裡暫時用 startGeneration 模擬或回傳錯誤
-    throw new Error("Not implemented: /generateVariants");
+    throw new Error("Not implemented: /Variants");
   }
 
   async submitFeedback(payload: FeedbackPayload): Promise<FeedbackResponse> {
