@@ -117,7 +117,7 @@
 3.  `source venv/bin/activate` (macOS/Linux) 或 `.\venv\Scripts\activate` (Windows) (啟用虛擬環境)
 4.  `pip install -r requirements.txt` (安裝依賴)
 5.  複製 `.env.example` 為 `.env` (`cp .env.example .env`)
-6.  編輯 `.env` 檔案，填入你的 AWS Credentials, Region, S3 Bucket Name, SageMaker Endpoint Name, DynamoDB Table Names 等。
+6.  編輯 `.env` 檔案。
 
 **前端 (Frontend):**
 
@@ -141,4 +141,21 @@
     * `npm run dev` (或 `yarn dev`)
     * 前端預設運行在 `http://localhost:8080` (或其他 Vite 指定的端口)。
     * 在瀏覽器中打開前端地址即可開始使用。
+  
+
+
+
+## 後端重建 (Backend Rebuild)
+
+主要目標：
+* 使用grok生成圖片，資料存在supabase + 背景 Worker 模式。
+* 引入身份驗證 (Admin/Demo 模式)。
+* 使用 Celery 處理背景圖片生成任務。
+* 整合 Flasgger 提供 API 文件。
+
+目前的狀態：
+* 後端伺服器已可運行。
+* API 文件可在 /apidocs/ 查看。
+
+循序圖(Sequence Diagram)
 
