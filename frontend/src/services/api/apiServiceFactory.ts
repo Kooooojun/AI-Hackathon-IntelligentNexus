@@ -1,27 +1,26 @@
 // apiServiceFactory.ts
 import { ApiService } from './types';
-// import { MockApiService } from './mockApiService';
+import { MockApiService } from './mockApiService'; // 取消註解
 import { RealApiService } from './realApiService';
 
-// Environment-based API service selection flase/true 
-const useMockApi = import.meta.env.VITE_USE_MOCK_API === 'False' || import.meta.env.MODE === 'development';
+//使用Real API 時改成false
+const useMockApi = "true"
 
-// API URL can be overridden by environment variables
-const apiUrl =  'http://127.0.0.1:8000/api';//import.meta.env.VITE_API_URL ||
+
+// 真實 API 的 URL (建議從環境變數讀取)
+const apiUrl = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api'; // 優先使用環境變數
 
 export const getApiService = (): ApiService => {
   if (useMockApi) {
-    console.log('Using real API service with URL:', apiUrl);
-    return new RealApiService(apiUrl); // ✅ 無需參數，內部已寫死 base URL
-    // console.log('Using mock API service');
-    // // return new MockApiService();
-    // throw new Error("Mock API disabled. Uncomment if needed.");
+    console.log('Using mock API service');
+    return new MockApiService(); // 返回 Mock 服務實例
   } else {
-    
+    console.log('Using real API service with URL:', apiUrl);
+    return new RealApiService(apiUrl); // 返回真實服務實例，並傳入 API URL
   }
 };
 
-// Singleton instance
+// Singleton instance (保持不變)
 let apiServiceInstance: ApiService | null = null;
 
 export const useApiService = (): ApiService => {

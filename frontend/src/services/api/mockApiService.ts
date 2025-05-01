@@ -46,9 +46,6 @@ export class MockApiService implements ApiService {
     return { job_id: jobId, message: "Generation started" };
   }
 
-  // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-  // +++ 添加 generateVariants 方法 +++
-  // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
   async generateVariants(payload: { reference_image_id: string; base_parameters?: DesignParameters }): Promise<StartGenerationResponse> {
     console.log('Mock API - Start Variant Generation (using generateVariants method):', payload);
     await delay(100); // 模擬網絡延遲
@@ -72,9 +69,6 @@ export class MockApiService implements ApiService {
     // 返回新的 Job ID
     return { job_id: jobId, message: "Variant generation started" };
   }
-  // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-  // +++ -------------------------- +++
-  // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 
   async checkJobStatus(jobId: string): Promise<JobStatusResponse> {
@@ -118,8 +112,8 @@ export class MockApiService implements ApiService {
       const currentJobInfo = this.jobStore.get(jobId);
        // 確保任務還在 store 中且狀態是 processing
       if (currentJobInfo && currentJobInfo.status === 'processing') {
-        // 模擬成功或失敗 (可以加入隨機性)
-        const shouldSucceed = Math.random() > 0.1; // 90% 成功率
+        const shouldSucceed = true
+        // const shouldSucceed = false; // 模擬失敗
 
         if (shouldSucceed) {
           currentJobInfo.status = 'succeeded';
